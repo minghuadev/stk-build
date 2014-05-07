@@ -1,0 +1,121 @@
+
+
+[1] yum install schroot and set /etc/schroot/schroot.conf (copy sid section)
+
+    [stk]
+    description=Debian stk (unstable)
+    directory=/home/stk/chroot
+    users=stk
+    groups=stk
+    root-groups=root
+    aliases=unstable,default
+
+
+[2] user directory and permission
+
+    create user stk
+    
+    mkdir /home/stk/chroot
+    chmod g+rx /home/stk
+    
+    -- without chmod, "schroot -c stk" could not chagne to /home/stk/chroot. 
+    -- with chmod, it fails at /bin/bash. 
+
+
+[3] setup chroot files: 
+
+   #yum --downloadonly --downloaddir=/home/stk/chroot reinstall fedora-release
+   yum --downloadonly --downloaddir=/home/stk/chroot install fedora-release-21-4
+   rpm --root /home/stk/chroot --initdb
+   rpm --root /home/stk/chroot -i fedora-release-19-8.noarch.rpm
+   yum --installroot=/home/stk/chroot install bash yum
+   yum --installroot=/home/stk/chroot install net-tools iputils passwd
+
+
+[4] fix config: 
+
+[4.1] user id
+
+    run "schroot -c stk" and exit
+    in /etc/schroot/default/nssdatabases comment out passwd, group, shadow.
+    edit /home/stk/chroot/etc/passwd, group, shadow, for root and stk.
+
+[4.2] system mounts in /etc/fstab
+
+    /proc  /home/stk/chroot/proc  none bind  0 0
+    /sys   /home/stk/chroot/sys   none bind  0 0
+    /dev   /home/stk/chroot/dev   none bind  0 0
+    /tmp   /home/stk/chroot/tmp   none bind  0 0
+    /dev/pts   /home/stk/chroot/dev/pts   none bind 0 0
+    
+    /run   /home/stk/chroot/run   none bind  0 0
+    /run/lock   /home/stk/chroot/run/lock   none bind  0 0
+    /dev/shm    /home/stk/chroot/dev/shm    none bind  0 0
+    #/run/shm    /home/stk/chroot/run/shm    none bind  0 0
+
+[4.3] system file for network
+
+    cp /etc/resolv.conf /home/stk/chroot/etc
+
+[4.4] root password
+
+    run "schroot -c stk" then "su", change root password. 
+
+
+[5] dependency packages in chroot
+
+    yum install gcc-c++ autoconf automake libogg-devel libvorbis-devel i
+    yum install openal-soft-devel fribidi-devel subversion libcurl-devel 
+    yum install cmake irrlicht-devel libbluedevil-devel.x86_64
+    yum install git tar make
+
+
+[6] source code
+
+    http://supertuxkart.sourceforge.net/Source_control
+
+source directory structure
+
+    src/stk-code
+    src/stk-assets
+
+check out source 130MB and assets 650MB
+
+    git clone https://github.com/supertuxkart/stk-code.git stk-code
+    svn checkout https://svn.code.sf.net/p/supertuxkart/code/stk-assets stk-assets
+
+media 1.5GB meant for artists
+
+    svn checkout https://svn.code.sf.net/p/supertuxkart/code/media/trunk stk-media-repo
+
+
+[7] build
+
+    http://supertuxkart.sourceforge.net/Build_STK_on_Linux
+
+[7.1] build without bluez for wiiuse
+
+    cd src/stk-code
+    mkdir cmake_build
+    cd cmake_build
+    #cmake .. 
+    cmake ..  -DUSE_WIIUSE=0
+    make VERBOSE=1 -j2
+
+[7.2] make a debug build
+
+    cmake .. -DCMAKE_BUILD_TYPE=Debug
+
+[7.3] to run
+
+    ./bin/supertuxkart
+
+[7.4] to install to /usr/local
+
+    sudo make install 
+
+[7.5] build for install to /opt/stk
+
+    cmake .. -DCMAKE_INSTALL_PREFIX=/opt/stk
+
+
