@@ -61,6 +61,15 @@
 
     run "schroot -c stk" then "su", change root password. 
 
+[4.5] x display
+
+    see https://help.ubuntu.com/community/BasicChroot
+
+    in host, type "export DISPLAY=:0.0", then "xhost +".
+    in chroot, type "export DISPLAY=:0.0", then the x commands.
+
+in chroot install xterm and verify it runs well.
+
 
 [5] dependency packages in chroot
 
@@ -117,5 +126,29 @@ media 1.5GB meant for artists
 [7.5] build for install to /opt/stk
 
     cmake .. -DCMAKE_INSTALL_PREFIX=/opt/stk
+
+
+[8] additional drivers
+
+fix X as in [4.5].
+
+[8.1] run command failed
+
+    LIBGL_DEBUG=verbose ./bin/supertuxkart
+
+    libGL: OpenDriver: trying /usr/lib/dri/i965_dri.so
+    libGL error: dlopen /usr/lib/dri/i965_dri.so failed
+    libGL: OpenDriver: trying /usr/lib/dri/tls/swrast_dri.so
+
+verify with "glxinfo | grep -i direct" and "glxinfo | grep -i opengl". 
+see http://forum.freegamedev.net/viewtopic.php?f=17&t=5214 about 
+"SuperTuxKart 0.8.1 crashes" by darkness3560
+
+[8.2] install "glx-utils", run "glxgears" it fails the same
+
+    $ rpm -q -f /usr/lib/dri/i965_dri.so
+    mesa-dri-drivers-9.2-1.20130919.fc19.i686
+
+install mesa-dri-drivers. glxgers and glxinfo works well.
 
 
