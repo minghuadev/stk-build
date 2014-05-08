@@ -1,0 +1,45 @@
+#!/bin/bash
+# ~/bin/kartfix1  -- fix missing shared libs
+
+mycwd=`pwd`
+destdir=share/supertuxkart/data
+
+if [ ! -d lib ]; then echo "  " No lib/ found; exit 1; fi
+if [ ! -d bin ]; then echo "  " No bin/ found; exit 1; fi
+if [ ! -d $destdir ]; then echo "  " No $destdir/ found; exit 1; fi
+if [ ! -f bin/supertuxkart ]; then echo "  " No bin/supertuxkart found; exit 1; fi
+
+export LD_LIBRARY_PATH=$mycwd/lib
+
+if [ -f $mycwd/tmplogerr ]; then rm $mycwd/tmplogerr; fi
+if [ -f $mycwd/tmploglib ]; then rm $mycwd/tmploglib; fi
+
+
+cd $destdir && $mycwd/bin/supertuxkart  2>$mycwd/tmplogerr
+
+grep 'supertuxkart: error while loading shared libraries' $mycwd/tmplogerr
+rc=$?
+if [ $rc -ne 0 ]; then 
+    echo "  tmplogerr found no supertuxkart:  "
+    exit 1
+fi
+echo "  tmplogerr found supertuxkart:  "
+
+cat $mycwd/tmplogerr | sed -e 's/.*shared libraries: \(lib.*\.so\).*/\1/' > $mycwd/tmploglib
+
+mylib=`cat $mycwd/tmploglib | xargs`
+echo "  please fix ... " $mylib 
+
+cd $mycwd  
+echo -n "  "
+ls ../srv/lib/${mylib}*
+echo "  cp -a ../srv/lib/${mylib}* lib/" 
+        cp -a ../srv/lib/${mylib}* lib/
+echo -n "  "
+ls lib/${mylib}*
+
+
+#error to be fixed
+#/...bin/supertuxkart: error while loading shared libraries: libfribidi.so.0: cannot open shared object file: No such file or directory
+
+

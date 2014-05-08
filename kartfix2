@@ -1,0 +1,33 @@
+#!/bin/bash
+# ~/bin/kartfix2  -- fix media dirs
+
+mycwd=`pwd`
+assetsdir=$mycwd/../srv/home/stk/stk-src/stk-assets
+destdir=share/supertuxkart/data
+
+if [ ! -d lib ]; then echo "  " No lib/ found; exit 1; fi
+if [ ! -d bin ]; then echo "  " No bin/ found; exit 1; fi
+if [ ! -d $destdir ]; then echo "  " No $destdir/ found; exit 1; fi
+if [ ! -f bin/supertuxkart ]; then echo "  " No bin/supertuxkart found; exit 1; fi
+
+mycwd=`pwd`
+export LD_LIBRARY_PATH=$mycwd/lib
+
+    function copydir {
+        sigdir=$1
+        echo 
+        echo "  " Check $sigdir/ ...
+        if [ ! -d $destdir/$sigdir ]; then 
+            echo "   " Copy $sigdir/ ...
+            echo "     " cp -a  $assetsdir/$sigdir  $destdir/
+                         cp -a  $assetsdir/$sigdir  $destdir/
+        fi
+    }
+
+copydir karts
+copydir library
+copydir music
+copydir sfx
+copydir textures
+copydir tracks
+

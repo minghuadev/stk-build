@@ -27,12 +27,12 @@
    #yum --downloadonly --downloaddir=/home/stk/chroot reinstall fedora-release
    yum --downloadonly --downloaddir=/home/stk/chroot install fedora-release-21-4
    rpm --root /home/stk/chroot --initdb
-   rpm --root /home/stk/chroot -i fedora-release-19-8.noarch.rpm
+   rpm --root /home/stk/chroot -i fedora-release-21-4.noarch.rpm
    yum --installroot=/home/stk/chroot install bash yum
    yum --installroot=/home/stk/chroot install net-tools iputils passwd
 
 
-[4] fix config: 
+[4] fix schroot config: 
 
 [4.1] user id
 
@@ -150,5 +150,23 @@ see http://forum.freegamedev.net/viewtopic.php?f=17&t=5214 about
     mesa-dri-drivers-9.2-1.20130919.fc19.i686
 
 install mesa-dri-drivers. glxgers and glxinfo works well.
+
+
+[9] install to a user account
+
+build with prefix to $HOME/bin under a chroot 
+
+    cmake .. -DCMAKE_INSTALL_PREFIX=$HOME/bin
+    make
+    make install
+
+outside of the chroot, copy the three kart* files to $HOME/bin, 
+and copy the installed ~/bin/bin, ~/bin/share. create ~/bin/lib. 
+run "kartfix1" till it copies all lib files. run "kartfix2" 
+to have it copy the assets directories. 
+
+run "~/bin/kart" to play.
+
+
 
 

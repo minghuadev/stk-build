@@ -1,0 +1,23 @@
+#!/bin/bash
+# ~/bin/kart  -- run ~/bin/bin/supertuxkart in ~/bin/share/supertuxkart/data 
+
+mycwd=`pwd`
+destdir=share/supertuxkart/data
+
+if [ ! -d lib ]; then echo "  " No lib/ found; exit 1; fi
+if [ ! -d bin ]; then echo "  " No bin/ found; exit 1; fi
+if [ ! -d $destdir ]; then echo "  " No $destdir/ found; exit 1; fi
+if [ ! -f bin/supertuxkart ]; then echo "  " No bin/supertuxkart found; exit 1; fi
+
+export LD_LIBRARY_PATH=$mycwd/lib
+
+cd $destdir && $mycwd/bin/supertuxkart
+
+rc=$?
+if [ $rc -ne 0 ]; then 
+    echo "  Exit code $rc"
+    exit 1
+fi
+
+exit 0
+
