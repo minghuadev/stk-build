@@ -259,3 +259,48 @@ or use "dpkg-reconfigure locales" to reconfigure locale.
 or install language-pack-en
 or run "locale-gen en_US.UTF-8"
 
+
+
+Ubuntu chroot with with audio
+================================
+
+https://kb8ojh.net/elb/musings/tag/xpra
+creating a chroot jail with sound and X11
+
+see PulseAudio FAQ at http://www.freedesktop.org/wiki/Software/PulseAudio/FAQ/
+
+the fstab fragment:
+
+    /proc		/proc		none	rw,bind		0	0
+    /sys		/sys		none	rw,bind		0	0
+    /tmp		/tmp		none	rw,bind		0	0
+    /run/shm	/run/shm	none	rw,bind		0	0
+    /home/elb/.pulse	/home/elb/.pulse	none	rw,bind	0	0
+    /var/lib/dbus	/var/lib/dbus	none	rw,bind		0	0
+
+config:
+
+    [unsafe-i386]
+    type=directory
+    directory=/mnt/unsafe
+    description=Precise chroot for i386 untrusted binaries
+    script-config=unsafe/config
+    personality=linux32
+    users=elb
+
+use xpera for network buffered x access. 
+
+install packages:
+
+    sudo schroot -c unsafe-i386
+    apt-get install libqtgui4 libasound2-plugins libxss1 libxv1 libqtwebkit4
+    dpkg -i /tmp/skype-ubuntu-precise_4.2.0.13-1_i386.deb
+
+if dpkg fails run "apt-get install -f" to patch up the dependencies then re-run dpkg. 
+
+
+
+
+
+
+
