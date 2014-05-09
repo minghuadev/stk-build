@@ -1,4 +1,6 @@
 
+Fedora chroot
+===============
 
 [1] yum install schroot and set /etc/schroot/schroot.conf (copy sid section)
 
@@ -169,4 +171,91 @@ run "~/bin/kart" to play.
 
 
 
+Ubuntu chroot
+===============
+
+https://help.ubuntu.com/community/BasicChroot
+
+[1] Basic chroot create
+
+[1.1] install dchroot and debootstrap packages
+[1.2] create /var/chroot folder
+[1.3] edit /etc/schroot/schroot.conf to add
+
+    [lucid]
+    description=Ubuntu Lucid
+    location=/var/chroot
+    priority=3
+    users=your_username
+    groups=sbuild
+    root-groups=root
+
+[1.4] install lucid from http://mirror.url.com/ubuntu/
+
+    sudo debootstrap --variant=buildd --arch i386 lucid /var/chroot/ http://mirror.url.com/ubuntu/
+
+[1.5] change to root shell inside the chroot
+
+    sudo chroot /var/chroot
+
+[2] setup
+
+    sudo mount -o bind /proc /var/chroot/proc
+    sudo cp /etc/resolv.conf /var/chroot/etc/resolv.conf
+
+[3] graphics
+
+    export DISPLAY=:0.0
+    xhost +
+
+[4] graphics with separate display
+
+[4.1] install xhost and xnest package
+[4.2] run in one terminal
+
+    Xnest -ac :1
+
+[4.3] run in a separate terminal
+
+    sudo chroot /var/chroot
+
+and inside the chroot start metacity window manager
+
+    export DISPLAY=locahost:1
+    metacity &
+
+a complete desktop can be installed with package ubuntu-desktop and 
+started by gnome-session command
+
+
+
+Ubuntu chroot with debootstrap
+================================
+
+https://help.ubuntu.com/community/DebootstrapChroot
+
+edit /etc/schroot/chroot.d/lucid_i386_conf
+
+    [lucid_i386]
+    description=Ubuntu 10.04 Lucid for i386
+    #use location on hardy and directory on lucid:
+    #location=/srv/chroot/lucid_i386
+    directory=/srv/chroot/lucid_i386
+    #personality=linux32
+    root-users=bob
+    run-setup-scripts=true
+    run-exec-scripts=true
+    type=directory
+
+run debootstrap to install. use amd64 for 64bit. 
+
+use schroot -l to check
+and use options -c and -u to invoke name and user
+
+file /etc/schroot/mount-defaults contains the default mounts.
+
+inside the chroot install ubuntu-minimal
+or use "dpkg-reconfigure locales" to reconfigure locale. 
+or install language-pack-en
+or run "locale-gen en_US.UTF-8"
 
