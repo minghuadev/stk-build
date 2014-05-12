@@ -169,6 +169,35 @@ to have it copy the assets directories.
 
 run "~/bin/kart" to play.
 
+[10] static build
+
+[10.1] steps for version 0.6
+
+http://supertuxkart.sourceforge.net/How_to_create_the_Linux_package
+
+install autopackage.org apgcc and apg++. download, extract, run make install.
+
+use this to build:
+
+    % sh autogen.sh
+    % CC=apgcc CXX=apg++ sh configure
+    % make clean all
+    % cd src/
+    % apg++ -O2 -Wall -Ibullet/src -o supertuxkart *.o -L. -lstatic_ssg \
+        /usr/lib/libplibjs.a /usr/lib/libplibsl.a /usr/lib/libplibssg.a \
+        /usr/lib/libplibpu.a /usr/lib/libplibfnt.a /usr/lib/libplibsg.a \
+        /usr/lib/libplibul.a /usr/lib/libplibssgaux.a \
+        -Lbullet/Demos/OpenGL -lbulletopenglsupport -Lbullet/src \
+        -lbulletdynamics -lbulletcollision -lbulletmath \
+        -Lenet -lenet -lglut -lGL -lSDL -lSDLmain /usr/lib/libalut.a \
+        /home/coz/Desktop/Descargados/openal-soft-1.6.372/libopenal.a \
+        /usr/lib/libvorbisfile.a /usr/lib/libvorbis.a /usr/lib/libogg.a
+    % strip supertuxkart
+
+[10.2] use this command to build from inside cmake_build
+
+    sh CMakeFiles/supertuxkart.dir/link.txt
+
 
 
 Ubuntu chroot
