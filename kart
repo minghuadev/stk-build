@@ -1,23 +1,32 @@
 #!/bin/bash
-# ~/bin/kart  -- run ~/bin/bin/supertuxkart in ~/bin/share/supertuxkart/data 
+# ~/any/kart -- run ~/any/bin/supertuxkart in ~/any/share/supertuxkart/data
 
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 mycwd=`pwd`
 destdir=share/supertuxkart/data
 
-if [ ! -d lib ]; then echo "  " No lib/ found; exit 1; fi
-if [ ! -d bin ]; then echo "  " No bin/ found; exit 1; fi
-if [ ! -d $destdir ]; then echo "  " No $destdir/ found; exit 1; fi
-if [ ! -f bin/supertuxkart ]; then echo "  " No bin/supertuxkart found; exit 1; fi
+cd $DIR
 
-export LD_LIBRARY_PATH=$mycwd/lib
+    function err {
+        rc=$1; echo "Error $rc"; cd $mycwd; exit $rc
+    }
 
-cd $destdir && $mycwd/bin/supertuxkart
+if [ ! -d lib ]; then echo " " No lib/ found; err 1; fi
+if [ ! -d bin ]; then echo " " No bin/ found; err 1; fi
+if [ ! -d $destdir ]; then echo " " No $destdir/ found; err 1; fi
+if [ ! -f bin/supertuxkart ]; then echo " " No bin/supertuxkart found; err 1; fi
+
+export LD_LIBRARY_PATH=$DIR/lib
+export HOME=$DIR/homeconf
+
+if [ ! -d $DIR/homeconf ]; then mkdir $DIR/homeconf; fi
+
+cd $DIR/$destdir && $DIR/bin/supertuxkart
 
 rc=$?
 if [ $rc -ne 0 ]; then 
-    echo "  Exit code $rc"
-    exit 1
+    err $rc
 fi
-
+cd $mycwd
 exit 0
 
