@@ -12,3 +12,8 @@
  * Nigtly builds of supertuxkart http://forum.freegamedev.net/viewtopic.php?f=17&t=3389&start=25
 
 
+### travis-ci build
+
+ * https://travis-ci.org/supertuxkart/stk-code
+
+
