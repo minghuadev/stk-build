@@ -38,4 +38,31 @@ The simplest way to do that is to use travis gem:
     travis encrypt MY_SECRET_ENV=super_secret
 
 
+### travis doc 
+
+New Deployment Providers
+Joshua Anderson, 17 May 2014
+
+
+#### GitHub Releases
+
+When you create a git tag, Travis CI can automatically upload your files 
+to the resulting GitHub Release. Here is a minimal .travis.yml to get you started.
+
+    deploy:
+      provider: releases
+      api-key: <GitHub Oauth Token>
+      file: <File to Upload>
+      skip_cleanup: true
+      on:
+        tags: true
+        all_branches: true
+
+We especially recommend using the travis tool to set up GitHub Releases, as it will 
+automatially setup a oauth key with the correct scopes and encrypts it for you.
+
+    $ travis setup releases
+
+Read more: http://docs.travis-ci.com/user/deployment/releases/
+
 
