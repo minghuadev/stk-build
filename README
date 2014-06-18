@@ -212,6 +212,24 @@ use this to build:
 
 Ubuntu chroot
 ===============
+  [note 1] use this to setup 64 bit:
+      sudo debootstrap --variant=buildd --arch amd64 trusty /var/chroot/ 
+  [note 2] use plain type not the directory type. bind mount /proc /dev /sys, 
+           and user home.
+  [note 3] "schroot -c trusty" to get in.
+  [note 4] add "universe" to /etc/apt/sources.list, run "apt-get update" to 
+           take effect of modified repo section. use "apt-get dist-upgrade" 
+           to update all packages. libopenal-dev is in universe. see this link:
+           http://www.mayin.org/ajayshah/COMPUTING/debian-principles.html
+           example trusty schroot.conf for travis user:
+      [trusty]
+      description=Ubuntu Trusty
+      directory=/home/travis/srv
+      #type=directory
+      users=travis
+      groups=travis
+      root-groups=root
+
 
 https://help.ubuntu.com/community/BasicChroot
 
