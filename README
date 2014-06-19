@@ -221,7 +221,7 @@ Ubuntu chroot
            take effect of modified repo section. use "apt-get dist-upgrade" 
            to update all packages. libopenal-dev is in universe. see this link:
            http://www.mayin.org/ajayshah/COMPUTING/debian-principles.html
-           example trusty schroot.conf for travis user:
+  [note 5] example trusty schroot.conf for travis user:
       [trusty]
       description=Ubuntu Trusty
       directory=/home/travis/srv
@@ -230,6 +230,9 @@ Ubuntu chroot
       groups=travis
       root-groups=root
 
+
+Ubuntu chroot reference
+=========================
 
 https://help.ubuntu.com/community/BasicChroot
 
