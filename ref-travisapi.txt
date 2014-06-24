@@ -1,0 +1,48 @@
+
+
+travis api
+=============
+
+
+access token
+-------------
+
+https://api.travis-ci.org
+
+
+POST /auth/github HTTP/1.1
+User-Agent: MyClient/1.0.0
+Accept: application/vnd.travis-ci.2+json
+Host: api.travis-ci.org
+Content-Type: application/json
+Content-Length: 37
+
+{"github_token":"YOUR GITHUB TOKEN"}
+
+HTTP/1.1 200 OK
+Content-Type: application/json
+
+{"access_token":"YOUR TRAVIS ACCESS TOKEN"}
+
+
+
+
+travis-ci.org login links
+===========================
+
+login:
+
+https://github.com/login?return_to=%2Flogin%2Foauth%2Fauthorize%3Fclient_id%3Df244293c729d5066cf27%26redirect_uri%3Dhttps%253A%252F%252Fapi.travis-ci.org%252Fauth%252Fhandshake%26scope%3Dread%253Aorg%252Cuser%253Aemail%252Crepo_deployment%252Crepo%253Astatus%252Cwrite%253Arepo_hook%26state%3Dfu2qVFEm6Se70xirBSTYcw%253A%253A%253Ahttps%253A%252F%252Ftravis-ci.org%252F
+
+login dec1:
+
+https://github.com/login?return_to=/login/oauth/authorize?client_id=f244293c729d5066cf27&redirect_uri=https%3A%2F%2Fapi.travis-ci.org%2Fauth%2Fhandshake&scope=read%3Aorg%2Cuser%3Aemail%2Crepo_deployment%2Crepo%3Astatus%2Cwrite%3Arepo_hook&state=fu2qVFEm6Se70xirBSTYcw%3A%3A%3Ahttps%3A%2F%2Ftravis-ci.org%2F
+
+login dec2:
+
+https://github.com/login?return_to=/login/oauth/authorize?client_id=f244293c729d5066cf27&redirect_uri=https://api.travis-ci.org/auth/handshake&scope=read:org,user:email,repo_deployment,repo:status,write:repo_hook&state=fu2qVFEm6Se70xirBSTYcw:::https://travis-ci.org/
+
+decoded by
+http://www.url-encode-decode.com/urldecode
+
+
