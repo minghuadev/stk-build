@@ -1,0 +1,94 @@
+
+from github wiki: rdepena/node-dualshock-controller
+clone link: https://github.com/rdepena/node-dualshock-controller.wiki.git
+file: Pairing-The-Dual-shock-3-controller-in-Linux-(Ubuntu-Debian).md
+2014-6-25
+
+
+========================================================
+
+
+Based on the following [Guide](http://www.raspians.com/Knowledgebase/ps3-dualshock-controller-install-on-the-raspberry-pi/) but I made some finds/discoveries that I have documented.
+
+I followed these steps in both raspbian 3.10.25 and Linux Mint 3.8.0-19-generic
+
+## you will need the following dependencies
+
+* bluez-utils
+* bluez-compat
+* bluez-hcidump
+* checkinstall
+* libusb-dev
+* libbluetooth-dev
+* joystick
+* pyqt4-dev-tools
+
+
+> sudo apt-get install bluez-utils bluez-compat bluez-hcidump checkinstall libusb-dev libbluetooth-dev joystick pyqt4-dev-tools
+
+## sixpair tool
+you will need sixpair to initiate the pairing with the controller, unfortunately it is not available using the package manager so we will need to download and build it:
+
+> wget http://www.pabr.org/sixlinux/sixpair.c
+
+> gcc -o sixpair sixpair.c -lusb
+
+## sixad tool
+will allow you to finish the pairing, you can use a PPA but I would not recommend it as on both systems I set up I had to patch the source because of existing issues.
+
+### Install from source
+
+> wget http://sourceforge.net/projects/qtsixa/files/QtSixA%201.5.1/QtSixA-1.5.1-src.tar.gz
+
+> tar xfvz QtSixA-1.5.1-src.tar.gz
+
+> cd QtSixA-1.5.1/sixad
+
+> make
+
+> sudo mkdir -p /var/lib/sixad/profiles
+
+> sudo checkinstall
+
+
+### Install from PPA (I don't recommend)
+> sudo add-apt-repository ppa:falk-t-j/qtsixa
+
+> sudo apt-get update
+
+> sudo apt-get install qtsixa
+
+## Pair and test
+
+connect the DS3 controller now then run:
+
+in the sixpair folder you built sixpair in the step before.
+> sudo ./sixpair
+
+>sudo sixad --start
+
+you should see:
+
+>started
+
+> sixad started, press the PS button now
+
+disconnect the DS3 Controller now and press the PS button, you should see:
+
+>started
+
+>Connected 'PLAYSTATION(R)3 Controller (44:D8:32:B4:04:F2)' [Battery 05]
+
+you can test if the controller has been paired:
+
+you should see js0 if you run:
+>ls /dev/input/
+
+you should see data if you run:
+>sudo jstest /dev/input/js0
+
+### Setting it up to run at start
+
+> sudo update-rc.d sixad defaults
+
+

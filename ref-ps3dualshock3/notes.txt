@@ -1,0 +1,68 @@
+
+
+summary
+=========
+
+[1] github has a note about pi.
+[2] a page by iwilcox. mentioned on ubuntu community sixasis. three recent links:
+    
+    [2.1] QTSixA
+    [2.2] ubuntu bug 124743. the last comment is about a PPA made by blade 
+    [2.3] iwilcox posted a page about the history and current
+    
+[3] basically the [2.2] nadia ppa by blade.
+
+
+
+details
+=========
+
+[2]
+https://help.ubuntu.com/community/Sixaxis
+
+Much of the information on this page applies to old versions (3.x) of 
+the Bluetooth userspace stack (bluez) found in 8.04/Hardy and below, 
+not the the current versions (4.x) found in 8.10/Intrepid and above. 
+Approaches that are more current include:
+
+    QTSixA, a dedicated SIXAXIS manager project supporting both USB and Bluetooth (PPA provided)
+
+    Bug 124743, a feature request for SIXAXIS Bluetooth support built into Ubuntu's own bluez
+
+    An Ubuntu user's custom bluez .deb for 12.04 Precise adding support for the SIXAXIS, plus details of what went into it and why 
+
+
+[3]
+https://bugs.launchpad.net/ubuntu/+source/bluez/+bug/124743
+
+Blade (nadia-xy) wrote on 2014-05-01: 	#16
+
+Following on from the work of previous posters, I've built a version 
+with the SIXAXIS pairing patch for Trusty and uploaded it to a ppa at 
+https://launchpad.net/~nadia-xy/+archive/ppa. Hopefully if/when Ubuntu 
+moves to Bluez 5 this won't be an issue anymore as Bluez 5 appears 
+to support this in recent versions without patching.
+
+
+[3] 
+https://launchpad.net/~nadia-xy/+archive/ppa/+packages
+trusty PPA packages. for each amd64, there is also a i386 package
+
+bluetooth_4.101-0ubuntu13sixaxis1_all.deb (39.8 KiB)
+bluez-alsa_4.101-0ubuntu13sixaxis1_amd64.deb (119.1 KiB)
+bluez-audio_4.101-0ubuntu13sixaxis1_all.deb (39.6 KiB)
+bluez-compat_4.101-0ubuntu13sixaxis1_amd64.deb (111.8 KiB)
+bluez-cups_4.101-0ubuntu13sixaxis1_amd64.deb (84.8 KiB)
+bluez-dbg_4.101-0ubuntu13sixaxis1_amd64.deb (1.3 MiB)
+bluez-gstreamer_4.101-0ubuntu13sixaxis1_amd64.deb (122.6 KiB)
+bluez-pcmcia-support_4.101-0ubuntu13sixaxis1_amd64.deb (40.6 KiB)
+bluez-utils_4.101-0ubuntu13sixaxis1_all.deb (39.7 KiB)
+bluez_4.101-0ubuntu13sixaxis1.debian.tar.gz (44.9 KiB)
+bluez_4.101-0ubuntu13sixaxis1.dsc (2.6 KiB)
+bluez_4.101-0ubuntu13sixaxis1_amd64.deb (606.5 KiB)
+bluez_4.101.orig.tar.gz (1.2 MiB)
+libbluetooth-dev_4.101-0ubuntu13sixaxis1_amd64.deb (101.5 KiB)
+libbluetooth3-dbg_4.101-0ubuntu13sixaxis1_amd64.deb (114.8 KiB)
+libbluetooth3_4.101-0ubuntu13sixaxis1_amd64.deb (80.0 KiB)
+
+

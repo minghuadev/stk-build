@@ -1,0 +1,3396 @@
+diff -Naur bluez-4.98/acinclude.m4 bluez-4.98-2ubuntu7-sixaxis.1/acinclude.m4
+--- bluez-4.98/acinclude.m4	2012-01-11 22:44:59.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/acinclude.m4	2012-07-20 04:36:03.000000000 +0100
+@@ -129,6 +129,8 @@
+ 	AC_CHECK_LIB(rt, clock_gettime, ALSA_LIBS="$ALSA_LIBS -lrt", alsa_found=no)
+ 	AC_SUBST(ALSA_CFLAGS)
+ 	AC_SUBST(ALSA_LIBS)
++	ALSA_LIBDIR=`$PKG_CONFIG --variable=libdir alsa 2>/dev/null`
++	AC_SUBST(ALSA_LIBDIR)
+ ])
+ 
+ AC_DEFUN([AC_PATH_USB], [
+@@ -149,6 +151,12 @@
+ 	AC_SUBST(UDEV_LIBS)
+ ])
+ 
++AC_DEFUN([AC_PATH_CABLE], [
++	PKG_CHECK_MODULES(CABLE, libudev libusb-1.0, cable_found=yes, cable_found=no)
++	AC_SUBST(CABLE_CFLAGS)
++	AC_SUBST(CABLE_LIBS)
++])
++
+ AC_DEFUN([AC_PATH_SNDFILE], [
+ 	PKG_CHECK_MODULES(SNDFILE, sndfile, sndfile_found=yes, sndfile_found=no)
+ 	AC_SUBST(SNDFILE_CFLAGS)
+@@ -186,6 +194,7 @@
+ 	sndfile_enable=${sndfile_found}
+ 	hal_enable=no
+ 	usb_enable=${usb_found}
++	cable_enable=${cable_found}
+ 	alsa_enable=${alsa_found}
+ 	gstreamer_enable=${gstreamer_found}
+ 	audio_enable=yes
+@@ -296,6 +305,10 @@
+ 		usb_enable=${enableval}
+ 	])
+ 
++	AC_ARG_ENABLE(cable, AC_HELP_STRING([--enable-cable], [enable DeviceKit support]), [
++		cable_enable=${enableval}
++	])
++
+ 	AC_ARG_ENABLE(tracer, AC_HELP_STRING([--enable-tracer], [install Tracing daemon]), [
+ 		tracer_enable=${enableval}
+ 	])
+@@ -395,6 +408,10 @@
+ 		AC_DEFINE(HAVE_LIBUSB, 1, [Define to 1 if you have USB library.])
+ 	fi
+ 
++	if (test "${cable_enable}" = "yes" && test "${cable_found}" = "yes"); then
++		AC_DEFINE(HAVE_CABLE, 1, [Define to 1 if you have libcable.])
++	fi
++
+ 	AM_CONDITIONAL(SNDFILE, test "${sndfile_enable}" = "yes" && test "${sndfile_found}" = "yes")
+ 	AM_CONDITIONAL(USB, test "${usb_enable}" = "yes" && test "${usb_found}" = "yes")
+ 	AM_CONDITIONAL(SBC, test "${alsa_enable}" = "yes" || test "${gstreamer_enable}" = "yes" ||
+@@ -432,4 +449,5 @@
+ 	AM_CONDITIONAL(DBUSOOBPLUGIN, test "${dbusoob_enable}" = "yes")
+ 	AM_CONDITIONAL(WIIMOTEPLUGIN, test "${wiimote_enable}" = "yes")
+ 	AM_CONDITIONAL(THERMOMETERPLUGIN, test "${thermometer_enable}" = "yes")
++	AM_CONDITIONAL(CABLE, test "${cable_enable}" = "yes" && test "${cable_found}" = "yes")
+ ])
+diff -Naur bluez-4.98/audio/a2dp.c bluez-4.98-2ubuntu7-sixaxis.1/audio/a2dp.c
+--- bluez-4.98/audio/a2dp.c	2011-12-21 22:53:54.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/audio/a2dp.c	2012-07-20 04:36:03.000000000 +0100
+@@ -1390,7 +1390,7 @@
+ {
+ 	int sbc_srcs = 1, sbc_sinks = 1;
+ 	int mpeg12_srcs = 0, mpeg12_sinks = 0;
+-	gboolean source = TRUE, sink = FALSE, socket = TRUE;
++	gboolean source = TRUE, sink = TRUE, socket = TRUE;
+ 	gboolean delay_reporting = FALSE;
+ 	char *str;
+ 	GError *err = NULL;
+diff -Naur bluez-4.98/audio/gsta2dpsink.c bluez-4.98-2ubuntu7-sixaxis.1/audio/gsta2dpsink.c
+--- bluez-4.98/audio/gsta2dpsink.c	2011-02-13 20:40:34.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/audio/gsta2dpsink.c	2012-07-20 04:36:03.000000000 +0100
+@@ -725,6 +725,6 @@
+ gboolean gst_a2dp_sink_plugin_init(GstPlugin *plugin)
+ {
+ 	return gst_element_register(plugin, "a2dpsink",
+-			GST_RANK_MARGINAL, GST_TYPE_A2DP_SINK);
++			GST_RANK_MARGINAL-1, GST_TYPE_A2DP_SINK);
+ }
+ 
+diff -Naur bluez-4.98/audio/manager.c bluez-4.98-2ubuntu7-sixaxis.1/audio/manager.c
+--- bluez-4.98/audio/manager.c	2012-01-11 22:44:59.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/audio/manager.c	2012-07-20 04:36:03.000000000 +0100
+@@ -113,11 +113,11 @@
+ static struct enabled_interfaces enabled = {
+ 	.hfp		= TRUE,
+ 	.headset	= TRUE,
+-	.gateway	= FALSE,
++	.gateway	= TRUE,
+ 	.sink		= TRUE,
+-	.source		= FALSE,
++	.source		= TRUE,
+ 	.control	= TRUE,
+-	.socket		= FALSE,
++	.socket		= TRUE,
+ 	.media		= TRUE,
+ };
+ 
+@@ -990,6 +990,7 @@
+ 	}
+ 
+ 	if (adp->hfp_hs_server) {
++		g_io_channel_shutdown(adp->hfp_hs_server, TRUE, NULL);
+ 		g_io_channel_unref(adp->hfp_hs_server);
+ 		adp->hfp_hs_server = NULL;
+ 	}
+diff -Naur bluez-4.98/audio/telephony-maemo5.c bluez-4.98-2ubuntu7-sixaxis.1/audio/telephony-maemo5.c
+--- bluez-4.98/audio/telephony-maemo5.c	2011-12-21 22:53:54.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/audio/telephony-maemo5.c	2012-07-20 04:36:03.000000000 +0100
+@@ -1385,6 +1385,7 @@
+ 	return type == DBUS_TYPE_INVALID ? TRUE : FALSE;
+ }
+ 
++#if 0 /* Disable hal */
+ static void hal_battery_level_reply(DBusPendingCall *call, void *user_data)
+ {
+ 	DBusError err;
+@@ -1501,6 +1502,7 @@
+ 		dbus_message_iter_next(&array);
+ 	}
+ }
++#endif /* Disable hal */
+ 
+ static void csd_call_free(struct csd_call *call)
+ {
+@@ -1715,6 +1717,7 @@
+ 	dbus_message_unref(reply);
+ }
+ 
++#if 0 /* Disable hal */
+ static void hal_find_device_reply(DBusPendingCall *call, void *user_data)
+ {
+ 	DBusError err;
+@@ -1768,6 +1771,7 @@
+ done:
+ 	dbus_message_unref(reply);
+ }
++#endif /* Disable hal */
+ 
+ static void phonebook_read_reply(DBusPendingCall *call, void *user_data)
+ {
+@@ -2018,9 +2022,11 @@
+ 	else if (dbus_message_is_signal(msg, NETWORK_INTERFACE,
+ 					"signal_strength_change"))
+ 		handle_signal_strength_change(msg);
++#if 0 /* Disable hal */
+ 	else if (dbus_message_is_signal(msg, "org.freedesktop.Hal.Device",
+ 					"PropertyModified"))
+ 		handle_hal_property_modified(msg);
++#endif /* Disable hal */
+ 	else if (dbus_message_is_signal(msg, SSC_DBUS_IFACE,
+ 						"modem_state_changed_ind"))
+ 		handle_modem_state(msg);
+@@ -2077,6 +2083,7 @@
+ 
+ 	telephony_ready_ind(features, maemo_indicators, BTRH_NOT_SUPPORTED,
+ 								chld_str);
++#if 0 /* Disable hal */
+ 	if (send_method_call("org.freedesktop.Hal",
+ 				"/org/freedesktop/Hal/Manager",
+ 				"org.freedesktop.Hal.Manager",
+@@ -2085,7 +2092,7 @@
+ 				DBUS_TYPE_STRING, &battery_cap,
+ 				DBUS_TYPE_INVALID) < 0)
+ 		error("Unable to send HAL method call");
+-
++#endif /* Disable hal */
+ 	return 0;
+ }
+ 
+diff -Naur bluez-4.98/audio/telephony-maemo6.c bluez-4.98-2ubuntu7-sixaxis.1/audio/telephony-maemo6.c
+--- bluez-4.98/audio/telephony-maemo6.c	2011-12-21 22:53:54.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/audio/telephony-maemo6.c	2012-07-20 04:36:03.000000000 +0100
+@@ -1576,6 +1576,7 @@
+ 	return type == DBUS_TYPE_INVALID ? TRUE : FALSE;
+ }
+ 
++#if 0 /* Disable hal */
+ static void hal_battery_level_reply(DBusPendingCall *call, void *user_data)
+ {
+ 	DBusError err;
+@@ -1691,6 +1692,7 @@
+ 		dbus_message_iter_next(&array);
+ 	}
+ }
++#endif /* Disable hal */
+ 
+ static void csd_call_free(void *data)
+ {
+@@ -2045,9 +2047,11 @@
+ 	else if (dbus_message_is_signal(msg, CSD_CSNET_SIGNAL,
+ 				"SignalBarsChanged"))
+ 		handle_signal_bars_changed(msg);
++#if 0 /* Disable hal */
+ 	else if (dbus_message_is_signal(msg, "org.freedesktop.Hal.Device",
+ 					"PropertyModified"))
+ 		handle_hal_property_modified(msg);
++#endif
+ 	else if (dbus_message_is_signal(msg, SSC_DBUS_IFACE,
+ 						"modem_state_changed_ind"))
+ 		handle_modem_state(msg);
+@@ -2066,6 +2070,7 @@
+ 	watches = g_slist_prepend(watches, GUINT_TO_POINTER(watch));
+ }
+ 
++#if 0 /* Disable hal */
+ static void hal_find_device_reply(DBusPendingCall *call, void *user_data)
+ {
+ 	DBusError err;
+@@ -2116,6 +2121,8 @@
+ 	remove_pending(call);
+ }
+ 
++#endif /* Disable hal */
++
+ int telephony_init(void)
+ {
+ 	const char *battery_cap = "battery";
+@@ -2155,6 +2162,7 @@
+ 
+ 	telephony_ready_ind(features, maemo_indicators, BTRH_NOT_SUPPORTED,
+ 								chld_str);
++#if 0 /* Disable hal */
+ 	if (send_method_call("org.freedesktop.Hal",
+ 				"/org/freedesktop/Hal/Manager",
+ 				"org.freedesktop.Hal.Manager",
+@@ -2163,7 +2171,7 @@
+ 				DBUS_TYPE_STRING, &battery_cap,
+ 				DBUS_TYPE_INVALID) < 0)
+ 		error("Unable to send HAL method call");
+-
++#endif 
+ 	return 0;
+ }
+ 
+diff -Naur bluez-4.98/audio/telephony-ofono.c bluez-4.98-2ubuntu7-sixaxis.1/audio/telephony-ofono.c
+--- bluez-4.98/audio/telephony-ofono.c	2011-12-21 22:53:54.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/audio/telephony-ofono.c	2012-07-20 04:36:03.000000000 +0100
+@@ -1344,6 +1344,7 @@
+ 	return TRUE;
+ }
+ 
++#if 0 /* Disable hal */
+ static void hal_battery_level_reply(DBusPendingCall *call, void *user_data)
+ {
+ 	DBusMessage *reply;
+@@ -1527,6 +1528,7 @@
+ 	dbus_message_unref(reply);
+ 	remove_pending(call);
+ }
++#endif /* Disable hal */
+ 
+ static void handle_service_connect(DBusConnection *conn, void *user_data)
+ {
+@@ -1582,6 +1584,7 @@
+ 
+ 	watches = g_slist_prepend(watches, GUINT_TO_POINTER(watch));
+ 
++#if 0 /* Disable hal */
+ 	ret = send_method_call("org.freedesktop.Hal",
+ 				"/org/freedesktop/Hal/Manager",
+ 				"org.freedesktop.Hal.Manager",
+@@ -1591,7 +1594,7 @@
+ 				DBUS_TYPE_INVALID);
+ 	if (ret < 0)
+ 		return ret;
+-
++#endif
+ 	DBG("telephony_init() successfully");
+ 
+ 	telephony_ready_ind(features, ofono_indicators, BTRH_NOT_SUPPORTED,
+diff -Naur bluez-4.98/configure.ac bluez-4.98-2ubuntu7-sixaxis.1/configure.ac
+--- bluez-4.98/configure.ac	2012-01-11 22:44:59.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/configure.ac	2012-07-20 04:36:03.000000000 +0100
+@@ -3,6 +3,7 @@
+ 
+ AM_INIT_AUTOMAKE([foreign subdir-objects color-tests])
+ AM_CONFIG_HEADER(config.h)
++AC_CONFIG_MACRO_DIR([m4])
+ 
+ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
+ 
+@@ -24,6 +25,8 @@
+ AM_PROG_LEX
+ AM_PROG_MKDIR_P
+ 
++LT_INIT
++
+ m4_define([_LT_AC_TAGCONFIG], [])
+ m4_ifdef([AC_LIBTOOL_TAGS], [AC_LIBTOOL_TAGS([])])
+ 
+@@ -46,6 +49,7 @@
+ AC_PATH_USB
+ AC_PATH_UDEV
+ AC_PATH_SNDFILE
++AC_PATH_CABLE
+ AC_PATH_OUI
+ AC_PATH_READLINE
+ AC_PATH_CHECK
+diff -Naur bluez-4.98/debian/bluetooth-agent.1 bluez-4.98-2ubuntu7-sixaxis.1/debian/bluetooth-agent.1
+--- bluez-4.98/debian/bluetooth-agent.1	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluetooth-agent.1	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,15 @@
++.TH BLUETOOTH-AGENT "1" "March 2010"
++.SH NAME
++bluetooth-agent \- Bluetooth pass agent
++.SH SYNOPSIS
++.B bluetooth-agent
++.SH DESCRIPTION
++\fBBluetooth-agent\fP is pass agent program for bluetooth.
++
++.SH USAGE
++.TP
++bluetooth-agent [\fB--adapter\fP adapter-path] [\fB--path\fP agent-path] <passkey> [<device>]
++.SH AUTHOR
++This manual page was written by Nobuhiro Iwamatsu <iwamatsu@debian.org>,
++for the Debian GNU/Linux system (but may be used by others).
++
+diff -Naur bluez-4.98/debian/bluetooth-dbus.conf bluez-4.98-2ubuntu7-sixaxis.1/debian/bluetooth-dbus.conf
+--- bluez-4.98/debian/bluetooth-dbus.conf	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluetooth-dbus.conf	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,44 @@
++<!-- This configuration file specifies the required security policies
++     for Bluetooth core daemon to work. -->
++
++<!DOCTYPE busconfig PUBLIC "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
++ "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
++<busconfig>
++
++  <!-- ../system.conf have denied everything, so we just punch some holes -->
++
++  <policy user="root">
++    <allow own="org.bluez"/>
++    <allow send_destination="org.bluez"/>
++
++    <!-- allow root to send to agents -->
++    <allow send_interface="org.bluez.Agent"/>
++
++	<allow send_interface="org.bluez.HandsfreeAgent"/>
++    <allow send_interface="org.bluez.MediaEndpoint"/>
++    <allow send_interface="org.bluez.MediaPlayer"/>
++    <allow send_interface="org.bluez.Watcher"/>
++    <allow send_interface="org.bluez.ThermometerWatcher"/>
++  </policy>
++
++  <!-- allow users at the console, see consolekit or libpam-foreground -->
++  <policy at_console="true">
++    <allow send_destination="org.bluez"/>
++  </policy>
++
++  <!-- allow users of bluetooth group to communicate with hcid -->
++  <policy group="bluetooth">
++    <allow send_destination="org.bluez"/>
++  </policy>
++
++  <!-- allow users of lp group (printing subsystem) to communicate with hcid -->
++  <policy group="lp">
++    <allow send_destination="org.bluez"/>
++  </policy>
++
++
++  <policy context="default">
++    <deny send_destination="org.bluez"/>
++  </policy>
++
++</busconfig>
+diff -Naur bluez-4.98/debian/bluetooth.lintian-overrides bluez-4.98-2ubuntu7-sixaxis.1/debian/bluetooth.lintian-overrides
+--- bluez-4.98/debian/bluetooth.lintian-overrides	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluetooth.lintian-overrides	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,2 @@
++# package description looks fine, "Bluetooth stack utilities"
++bluetooth binary: description-starts-with-package-name
+diff -Naur bluez-4.98/debian/bluez_agent.udev bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez_agent.udev
+--- bluez-4.98/debian/bluez_agent.udev	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez_agent.udev	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,8 @@
++#!/bin/sh -e
++# /usr is not guaranteed to be mounted when udev starts
++
++(
++	. /lib/udev/hotplug.functions
++	wait_for_file /lib/udev/hid2hci
++	exec /lib/udev/hid2hci "$@"
++) &
+diff -Naur bluez-4.98/debian/bluez-alsa.install bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-alsa.install
+--- bluez-4.98/debian/bluez-alsa.install	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-alsa.install	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,2 @@
++usr/lib/*/alsa-lib/*.so
++audio/bluetooth.conf usr/share/alsa/alsa.conf.d
+diff -Naur bluez-4.98/debian/bluez.bluetooth.init bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.bluetooth.init
+--- bluez-4.98/debian/bluez.bluetooth.init	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.bluetooth.init	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,201 @@
++#! /bin/sh
++### BEGIN INIT INFO
++# Provides: bluetooth
++# Required-Start:    $local_fs $syslog $remote_fs dbus
++# Required-Stop:     $local_fs $syslog $remote_fs
++# Default-Start:     2 3 4 5
++# Default-Stop:      0 1 6
++# Short-Description: Start bluetooth daemons
++### END INIT INFO
++#
++# bluez    Bluetooth subsystem starting and stopping
++#
++# originally from bluez's scripts/bluetooth.init
++#
++# Edd Dumbill <ejad@debian.org>
++# LSB 3.0 compilance and enhancements by Filippo Giunchedi <filippo@debian.org>
++#
++# Updated for bluez 4.7 by Mario Limonciello <mario_limonciello@dell.com>
++#
++# Note: older daemons like dund pand hidd are now shipped inside the
++# bluez-compat package
++
++PATH=/sbin:/bin:/usr/sbin:/usr/bin
++DESC=bluetooth
++
++DAEMON=/usr/sbin/bluetoothd
++HCIATTACH=/usr/sbin/hciattach
++
++HID2HCI_ENABLED=1
++HID2HCI_UNDO=1
++
++UART_CONF=/etc/bluetooth/uart
++
++RFCOMM_NAME=rfcomm
++RFCOMM=/usr/bin/$RFCOMM_NAME
++RFCOMM_CONF=/etc/bluetooth/$RFCOMM_NAME.conf
++SDPTOOL=/usr/bin/sdptool
++
++SSD_OPTIONS="--oknodo --quiet --exec $DAEMON"
++
++test -f $DAEMON || exit 0
++
++# FIXME: any of the sourced files may fail if/with syntax errors
++test -f /etc/default/bluetooth && . /etc/default/bluetooth
++test -f /etc/default/rcS && . /etc/default/rcS
++
++. /lib/lsb/init-functions
++
++set -e
++
++# FIXME: this function is possibly a no-op
++run_sdptool()
++{
++	# declaring IFS local in this function, removes the need to
++	# save/restore it
++	local IFS o
++
++	test -x $SDPTOOL || return 1
++
++# FIXME: where does SDPTOOL_OPTIONS come from?
++	if ! test -z "$SDPTOOL_OPTIONS" ; then
++		IFS=";"
++		for o in $SDPTOOL_OPTIONS ; do
++			#echo "execing $SDPTOOL $o"
++			IFS=" "
++			if [ "$VERBOSE" != no ]; then
++				$SDPTOOL $o
++			else
++				$SDPTOOL $o >/dev/null 2>&1
++			fi
++		done
++	fi
++}
++
++hci_input()
++{
++    log_progress_msg "switching to HID/HCI no longer done in init script, see /usr/share/doc/bluez/NEWS.Debian.gz" || :
++}
++alias enable_hci_input=hci_input
++alias disable_hci_input=hci_input
++
++start_uarts()
++{
++	[ -f $HCIATTACH ] && [ -f $UART_CONF ] || return
++	grep -v '^#' $UART_CONF | while read i; do
++               if [ "$VERBOSE" != no ]; then
++                       $HCIATTACH $i
++               else
++                       $HCIATTACH $i >/dev/null 2>&1
++               fi
++	done
++}
++
++stop_uarts()
++{
++	killall ${HCIATTACH##*/} >/dev/null 2>&1 || :
++}
++
++start_rfcomm()
++{
++	if [ -x $RFCOMM ] && [ -f $RFCOMM_CONF ] ; then
++		# rfcomm must always succeed for now: users
++		# may not yet have an rfcomm-enabled kernel
++                if [ "$VERBOSE" != no ]; then
++		       log_progress_msg "${RFCOMM##*/}"
++		       $RFCOMM -f $RFCOMM_CONF bind all || :
++                else
++		       $RFCOMM -f $RFCOMM_CONF bind all >/dev/null 2>&1 || :
++                fi
++	fi
++}
++
++stop_rfcomm()
++{
++	if [ -x $RFCOMM ] ; then
++               if [ "$VERBOSE" != no ]; then
++		       log_progress_msg "${RFCOMM##*/}"
++		       $RFCOMM unbind all || :
++               else
++		       $RFCOMM unbind all >/dev/null 2>&1 || :
++               fi
++	fi
++}
++
++restart_rfcomm()
++{
++	if [ -x $RFCOMM ] && [ -f $RFCOMM_CONF ] ; then
++               if [ "$VERBOSE" != no ]; then
++		       log_progress_msg  "${RFCOMM##*/}"
++		       $RFCOMM unbind all || :
++		       $RFCOMM -f $RFCOMM_CONF bind all || :
++               else
++		       $RFCOMM unbind all >/dev/null 2>&1|| :
++		       $RFCOMM -f $RFCOMM_CONF bind all >/dev/null 2>&1 || :
++               fi
++	fi
++}
++
++case $1 in
++  start)
++	log_daemon_msg "Starting $DESC"
++
++	if test "$BLUETOOTH_ENABLED" = 0; then
++		log_progress_msg "disabled. see /etc/default/bluetooth"
++		log_end_msg 0
++		exit 0
++	fi
++
++	start-stop-daemon --start $SSD_OPTIONS
++	log_progress_msg "${DAEMON##*/}"
++
++	run_sdptool || :
++
++	start_uarts || :
++
++	if test "$HID2HCI_ENABLED" = 1; then
++		enable_hci_input
++	fi
++	start_rfcomm || :
++
++	if test "$HIDD_ENABLED" = 1 ||
++		test "$PAND_ENABLED" = 1 || test "$DUND_ENABLED" = 1; then
++		log_progress_msg "compatibily daemons not started, see bluez-compat package"
++	fi
++
++	log_end_msg 0
++  ;;
++  stop)
++	log_daemon_msg "Stopping $DESC"
++	if test "$BLUETOOTH_ENABLED" = 0; then
++		log_progress_msg "disabled."
++		log_end_msg 0
++		exit 0
++	fi
++	stop_rfcomm || :
++	if test "$HID2HCI_UNDO" = 1; then
++		disable_hci_input
++	fi
++	start-stop-daemon --stop $SSD_OPTIONS
++	log_progress_msg "${DAEMON}"
++	stop_uarts || :
++	log_end_msg 0
++  ;;
++  restart|force-reload)
++	$0 stop
++	sleep 1
++	$0 start
++  ;;
++  status)
++	status_of_proc "$DAEMON" "$DESC" && exit 0 || exit $?
++  ;;
++  *)
++	N=/etc/init.d/bluetooth
++	echo "Usage: $N {start|stop|restart|force-reload|status}" >&2
++	exit 1
++	;;
++esac
++
++exit 0
++
++# vim:noet
+diff -Naur bluez-4.98/debian/bluez.bluetooth.upstart bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.bluetooth.upstart
+--- bluez-4.98/debian/bluez.bluetooth.upstart	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.bluetooth.upstart	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,47 @@
++# bluez - bluetooth daemon
++
++description     "bluetooth daemon"
++
++start on started dbus
++stop on stopping dbus
++
++env UART_CONF=/etc/bluetooth/uart
++env RFCOMM_CONF=/etc/bluetooth/rfcomm.conf
++
++expect fork
++respawn
++
++exec /usr/sbin/bluetoothd
++
++post-start script
++	[ "$VERBOSE" = no ] && redirect='>/dev/null 2>&1' || redirect=
++
++	# start_uarts()
++	if [ -x /usr/sbin/hciattach ] && [ -f $UART_CONF ];
++	then
++		grep -v '^#' $UART_CONF | while read i; do
++		  eval "/usr/sbin/hciattach $i $redirect" || :
++		done
++	fi
++
++	# start_rfcomm()
++	if [ -x /usr/bin/rfcomm ] && [ -f $RFCOMM_CONF ] ;
++	then
++		# rfcomm must always succeed for now: users
++		# may not yet have an rfcomm-enabled kernel
++		eval "/usr/bin/rfcomm -f $RFCOMM_CONF bind all $redirect" || :
++	fi
++end script
++
++post-stop script
++	# stop_uarts()
++	logger -t bluez "Stopping uarts"
++	killall hciattach >/dev/null 2>&1 || :
++
++	# stop_rfcomm()
++	logger -t bluez "Stopping rfcomm"
++	if [ -x /usr/bin/rfcomm ];
++	then
++		eval "/usr/bin/rfcomm unbind all $redirect" || :
++	fi
++end script
+diff -Naur bluez-4.98/debian/bluez-compat.dirs bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-compat.dirs
+--- bluez-4.98/debian/bluez-compat.dirs	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-compat.dirs	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,2 @@
++usr/bin
++usr/share/man/man1
+diff -Naur bluez-4.98/debian/bluez-compat.install bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-compat.install
+--- bluez-4.98/debian/bluez-compat.install	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-compat.install	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,6 @@
++usr/bin/pand
++usr/share/man/man1/pand.1
++usr/bin/dund
++usr/share/man/man1/dund.1
++usr/bin/hidd
++usr/share/man/man1/hidd.1
+diff -Naur bluez-4.98/debian/bluez-compat.README.Debian bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-compat.README.Debian
+--- bluez-4.98/debian/bluez-compat.README.Debian	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-compat.README.Debian	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,14 @@
++bluez compatibility daemons
++===========================
++This package contains old daemons like dund/pand/hidd which have been obsoleted
++by bluetoothd and the D-Bus API, they are provided for backward compatibility.
++
++It is possibile to start the daemons at boot if needed via /etc/rc.local file.
++
++If options were used via /etc/default/bluetooth this can be accomplished by a
++snippet like:
++
++test -f /etc/default/bluetooth && . /etc/default/bluetooth
++[ "$HIDD_ENABLED" -eq 1 ] && /usr/bin/hidd $HIDD_OPTIONS	
++[ "$PAND_ENABLED" -eq 1 ] && /usr/bin/pand $PAND_OPTIONS	
++[ "$DUND_ENABLED" -eq 1 ] && /usr/bin/dund $DUND_OPTIONS	
+diff -Naur bluez-4.98/debian/bluez-cups.install bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-cups.install
+--- bluez-4.98/debian/bluez-cups.install	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-cups.install	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1 @@
++usr/lib/*/cups/backend/bluetooth usr/lib/cups/backend
+diff -Naur bluez-4.98/debian/bluez-cups.README.Debian bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-cups.README.Debian
+--- bluez-4.98/debian/bluez-cups.README.Debian	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-cups.README.Debian	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,11 @@
++bluez-cups
++
++To configure a Bluetooth printer, set it up in CUPS like it was connected to
++your parallel or USB port. Then edit your /etc/cups/printers.conf and replace
++the device URI with a bluetooth one.
++
++The printer's URI will look something like this: bluetooth://00408C5E5DA4/spp
++If your printer uses HCRP (hardcopy cable replacement protocol) then remove
++the "/spp" from the end.  SPP is serial port protocol.
++
++ -- Edd Dumbill <ejad@debian.org>, Fri Jul 16 19:25:21 BST 2004
+diff -Naur bluez-4.98/debian/bluez.dirs bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.dirs
+--- bluez-4.98/debian/bluez.dirs	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.dirs	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1 @@
++usr/bin
+diff -Naur bluez-4.98/debian/bluez.docs bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.docs
+--- bluez-4.98/debian/bluez.docs	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.docs	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,2 @@
++*/*-api.txt
++debian/README.Debian
+diff -Naur bluez-4.98/debian/bluez.examples bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.examples
+--- bluez-4.98/debian/bluez.examples	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.examples	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,2 @@
++test/list-devices
++test/monitor-bluetooth
+diff -Naur bluez-4.98/debian/bluez-gstreamer.install bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-gstreamer.install
+--- bluez-4.98/debian/bluez-gstreamer.install	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-gstreamer.install	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1 @@
++usr/lib/*/gstreamer-*/*.so
+diff -Naur bluez-4.98/debian/bluez.install bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.install
+--- bluez-4.98/debian/bluez.install	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.install	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,36 @@
++etc/bluetooth/main.conf
++etc/bluetooth/rfcomm.conf
++input/input.conf etc/bluetooth
++audio/audio.conf etc/bluetooth
++network/network.conf etc/bluetooth
++serial/serial.conf etc/bluetooth
++proximity/proximity.conf etc/bluetooth
++etc/dbus-1
++usr/sbin
++usr/bin/rctest
++usr/bin/hcitool
++usr/bin/sdptool
++usr/bin/dfutool
++usr/bin/ciptool
++usr/bin/gatttool
++usr/bin/l2ping
++usr/bin/l2test
++usr/bin/rfcomm
++lib/udev/hid2hci
++lib/udev/rules.d/97-bluetooth-hid2hci.rules
++lib/systemd
++# usr/share/dbus-1
++usr/share/man/man1/sdptool.1
++usr/share/man/man1/hcitool.1
++usr/share/man/man1/dfutool.1
++usr/share/man/man1/ciptool.1
++usr/share/man/man1/hciemu.1
++usr/share/man/man1/rfcomm.1
++usr/share/man/man1/rctest.1
++usr/share/man/man8/bluetoothd.8
++usr/share/man/man8/hid2hci.8
++usr/share/man/man8/hciattach.8
++usr/share/man/man8/l2ping.8
++usr/share/man/man8/hciconfig.8
++usr/share/man/man8/bccmd.8
++debian/source_bluez.py usr/share/apport/package-hooks
+diff -Naur bluez-4.98/debian/bluez.lintian-overrides bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.lintian-overrides
+--- bluez-4.98/debian/bluez.lintian-overrides	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.lintian-overrides	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,32 @@
++bluez: binary-without-manpage usr/bin/bluez-simple-endpoint
++bluez: binary-without-manpage usr/bin/bluez-simple-service
++bluez: binary-without-manpage usr/bin/bluez-test-adapter
++bluez: binary-without-manpage usr/bin/bluez-test-attrib
++bluez: binary-without-manpage usr/bin/bluez-test-audio
++bluez: binary-without-manpage usr/bin/bluez-test-device
++bluez: binary-without-manpage usr/bin/bluez-test-discovery
++bluez: binary-without-manpage usr/bin/bluez-test-input
++bluez: binary-without-manpage usr/bin/bluez-test-manager
++bluez: binary-without-manpage usr/bin/bluez-test-network
++bluez: binary-without-manpage usr/bin/bluez-test-oob
++bluez: binary-without-manpage usr/bin/bluez-test-sap-server
++bluez: binary-without-manpage usr/bin/bluez-test-serial
++bluez: binary-without-manpage usr/bin/bluez-test-service
++bluez: binary-without-manpage usr/bin/bluez-test-telephony
++bluez: binary-without-manpage usr/bin/gatttool
++bluez: python-script-but-no-python-dep usr/bin/bluez-simple-agent
++bluez: python-script-but-no-python-dep usr/bin/bluez-simple-endpoint
++bluez: python-script-but-no-python-dep usr/bin/bluez-simple-service
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-adapter
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-attrib
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-audio
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-device
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-discovery
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-input
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-manager
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-network
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-oob
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-sap-server
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-serial
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-service
++bluez: python-script-but-no-python-dep usr/bin/bluez-test-telephony
+diff -Naur bluez-4.98/debian/bluez.maintscript bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.maintscript
+--- bluez-4.98/debian/bluez.maintscript	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.maintscript	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1 @@
++rm_conffile /etc/default/bluetooth 4.98-2ubuntu4
+diff -Naur bluez-4.98/debian/bluez.manpages bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.manpages
+--- bluez-4.98/debian/bluez.manpages	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.manpages	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,4 @@
++debian/bluetooth-agent.1
++debian/bluez-simple-agent.1
++debian/l2test.1
++debian/hcitrace.1
+diff -Naur bluez-4.98/debian/bluez-pcmcia-support.install bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-pcmcia-support.install
+--- bluez-4.98/debian/bluez-pcmcia-support.install	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-pcmcia-support.install	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,2 @@
++lib/udev/bluetooth_serial
++lib/udev/rules.d/97-bluetooth-serial.rules
+diff -Naur bluez-4.98/debian/bluez.postinst bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.postinst
+--- bluez-4.98/debian/bluez.postinst	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.postinst	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,43 @@
++#!/bin/sh
++
++set -e
++
++case "$1" in
++    configure)
++        if [ -e /etc/init.d/bluez-utils ]; then
++            update-rc.d -f bluez-utils remove
++            # maybe a (medium/low debconf?) notice is best suited here
++        fi
++
++        # use MAKEDEV instead of the original bluez script below as per policy 10.6
++        if [ -x /dev/MAKEDEV ]; then
++            echo "Creating device nodes ..."
++            cd /dev && ./MAKEDEV bluetooth 1>/dev/null 2>/dev/null
++        fi
++
++        # create bluetooth group if not already present
++        if ! getent group bluetooth > /dev/null; then
++            addgroup --quiet --system bluetooth
++        fi
++
++        # reload dbus config file
++        if [ -x /etc/init.d/dbus ]; then
++            invoke-rc.d dbus force-reload || true
++        fi
++
++        #reload udev rules
++        if [ -x /etc/init.d/udev ]; then
++            invoke-rc.d udev reload || true
++        fi
++
++        ;;
++    abort-upgrade|abort-remove|abort-deconfigure)
++    ;;
++
++    *)
++        echo "postinst called with unknown argument \`$1'" >&2
++        exit 0
++    ;;
++esac
++
++#DEBHELPER#
+diff -Naur bluez-4.98/debian/bluez.postrm bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.postrm
+--- bluez-4.98/debian/bluez.postrm	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.postrm	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,49 @@
++#!/bin/sh
++# postrm script for bluez
++#
++# see: dh_installdeb(1)
++
++set -e
++
++# summary of how this script can be called:
++#        * <postrm> `remove'
++#        * <postrm> `purge'
++#        * <old-postrm> `upgrade' <new-version>
++#        * <new-postrm> `failed-upgrade' <old-version>
++#        * <new-postrm> `abort-install'
++#        * <new-postrm> `abort-install' <old-version>
++#        * <new-postrm> `abort-upgrade' <old-version>
++#        * <disappearer's-postrm> `disappear' <overwriter>
++#          <overwriter-version>
++# for details, see http://www.debian.org/doc/debian-policy/ or
++# the debian-policy package
++
++
++case "$1" in
++    remove|upgrade|failed-upgrade|disappear)
++    ;;
++
++    purge)
++        if [ "$(cat /etc/init/bluetooth.override)" = "$(printf "# Inserted by bluez\nmanual\n")" ]; then
++            rm -f /etc/init/bluetooth.override
++        fi
++    ;;
++
++    abort-install|abort-upgrade)
++        if dpkg --compare-versions "$2" le-nl 4.98-2ubuntu1; then
++            perl -i -0pe 's/# Inserted by bluez\nmanual\n//' /etc/init/bluetooth.override
++        fi
++    ;;
++
++    *)
++        echo "postrm called with unknown argument \`$1'" >&2
++        exit 1
++    ;;
++esac
++
++# dh_installdeb will replace this with shell code automatically
++# generated by other debhelper scripts.
++
++#DEBHELPER#
++
++exit 0
+diff -Naur bluez-4.98/debian/bluez.preinst bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.preinst
+--- bluez-4.98/debian/bluez.preinst	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez.preinst	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,45 @@
++#!/bin/sh
++# preinst script for bluez
++#
++# see: dh_installdeb(1)
++
++set -e
++
++# summary of how this script can be called:
++#        * <new-preinst> `install'
++#        * <new-preinst> `install' <old-version>
++#        * <new-preinst> `upgrade' <old-version>
++#        * <old-preinst> `abort-upgrade' <new-version>
++# for details, see http://www.debian.org/doc/debian-policy/ or
++# the debian-policy package
++
++
++case "$1" in
++    install|upgrade)
++        if dpkg --compare-versions "$2" le-nl 4.98-2ubuntu1; then
++            (
++                test -f /etc/default/bluetooth && . /etc/default/bluetooth
++                if [ "$BLUETOOTH_ENABLED" = 0 ] &&
++                    (! [ -f /etc/init/bluetooth.override ] ||
++                        ! grep -q -e "start on" -e "manual" /etc/init/bluetooth.override); then
++                    printf "# Inserted by bluez\nmanual\n" >> /etc/init/bluetooth.override
++                fi
++            )
++        fi
++    ;;
++
++    abort-upgrade)
++    ;;
++
++    *)
++        echo "preinst called with unknown argument \`$1'" >&2
++        exit 1
++    ;;
++esac
++
++# dh_installdeb will replace this with shell code automatically
++# generated by other debhelper scripts.
++
++#DEBHELPER#
++
++exit 0
+diff -Naur bluez-4.98/debian/bluez-simple-agent.1 bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-simple-agent.1
+--- bluez-4.98/debian/bluez-simple-agent.1	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-simple-agent.1	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,59 @@
++'\" t
++.\"     Title: BLUEZ-SIMPLE=AGENT
++.\"    Author: Nobuhiro Iwamatsu <iwamatsu@nigauri.org>
++.\" Generator: DocBook XSL Stylesheets v1.75.2 <http://docbook.sf.net/>
++.\"      Date: 09/09/2010
++.\"    Manual: bluez-simple-agent
++.\"    Source: http://bluez.org
++.\"  Language: English
++.\"
++.TH "BLUEZ\-SIMPLE=AGENT" "1" "09/09/2010" "http://bluez\&.org" "bluez-simple-agent"
++.\" -----------------------------------------------------------------
++.\" * Define some portability stuff
++.\" -----------------------------------------------------------------
++.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++.\" http://bugs.debian.org/507673
++.\" http://lists.gnu.org/archive/html/groff/2009-02/msg00013.html
++.\" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++.ie \n(.g .ds Aq \(aq
++.el       .ds Aq '
++.\" -----------------------------------------------------------------
++.\" * set default formatting
++.\" -----------------------------------------------------------------
++.\" disable hyphenation
++.nh
++.\" disable justification (adjust text to left margin only)
++.ad l
++.\" -----------------------------------------------------------------
++.\" * MAIN CONTENT STARTS HERE *
++.\" -----------------------------------------------------------------
++.SH "NAME"
++bluez-simple-agent \- A PIN management and agent program for pairing to Bluetooth device\&.
++.SH "SYNOPSIS"
++.HP \w'\fBbluez\-simple\-agent\ [<hciX>]\ [<bdaddr>]\ [remove]\fR\ 'u
++\fBbluez\-simple\-agent [<hciX>] [<bdaddr>] [remove]\fR
++.SH "DESCRIPTION"
++.PP
++bluez\-simple\-agent is pass agent program for bluetooth\&.
++.SH "OPTIONS"
++.PP
++\fB<hciX>\fR
++.RS 4
++The command is applied to device hciX , which must be the name of an installed Blue\(hy tooth device\&. If not specified, the command will be sent to the first available Blue\(hy tooth device\&.
++.RE
++.PP
++\fB<bdaddr>\fR
++.RS 4
++bdaddr of device doing pairing\&.
++.RE
++.PP
++\fBremove\fR
++.RS 4
++Remove intended bdaddr from database\&.
++.RE
++.SH "AUTHOR"
++.PP
++\fBNobuhiro Iwamatsu\fR <\&iwamatsu@nigauri\&.org\&>
++.RS 4
++Wrote this manpage for the Debian system\&.
++.RE
+diff -Naur bluez-4.98/debian/bluez-udev bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-udev
+--- bluez-4.98/debian/bluez-udev	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-udev	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,8 @@
++#!/bin/sh -e
++# /usr is not guaranteed to be mounted when udev starts
++
++(
++	. /lib/udev/hotplug.functions
++	wait_for_file /usr/sbin/bluetoothd
++	exec /usr/sbin/bluetoothd "$@"
++) &
+diff -Naur bluez-4.98/debian/bluez-utils.lintian-overrides bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-utils.lintian-overrides
+--- bluez-4.98/debian/bluez-utils.lintian-overrides	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/bluez-utils.lintian-overrides	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,2 @@
++# empty transitional postrm
++bluez-utils: maintainer-script-empty postrm
+diff -Naur bluez-4.98/debian/changelog bluez-4.98-2ubuntu7-sixaxis.1/debian/changelog
+--- bluez-4.98/debian/changelog	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/changelog	2012-07-20 04:40:01.000000000 +0100
+@@ -0,0 +1,658 @@
++bluez (4.98-2ubuntu7-sixaxis.1) precise; urgency=low
++
++  * Non-maintainer upload.
++  * Sony PlayStation 3 SIXAXIS support:
++    - Include Fedora's cable-based pairing patch
++    - Forcibly correct vendor/product IDs to ensure hid-sony module gets loaded
++
++ -- Zak Wilcox <iwilcox@jin>  Fri, 20 Jul 2012 04:37:10 +0100
++
++bluez (4.98-2ubuntu7) precise; urgency=low
++
++  * debian/patches/10-unregister_interface_on_exit.patch: unregister the SAP
++    interface on exit. Thanks to Jesse Sung for the patch.
++  * debian/patches/11-explicitly_close.patch: make sure the io channel for
++    HFP is properly closed on exit. Thanks to Jesse Sung for the patch.
++    (LP: #907818)
++
++ -- Mathieu Trudel-Lapierre <mathieu-tl@ubuntu.com>  Wed, 21 Mar 2012 15:27:57 -0400
++
++bluez (4.98-2ubuntu6) precise; urgency=low
++
++  * debian/control: Drop unused python-gobject dependency.
++
++ -- Martin Pitt <martin.pitt@ubuntu.com>  Tue, 13 Mar 2012 19:41:36 +0100
++
++bluez (4.98-2ubuntu5) precise; urgency=low
++
++  * Fix the version number in debian/bluez.maintscript so it actually
++    cleans up the file. (LP: #953448)
++
++ -- Evan Broder <evan@ebroder.net>  Mon, 12 Mar 2012 15:07:44 -0700
++
++bluez (4.98-2ubuntu4) precise; urgency=low
++
++  [ Pali Rohár ]
++  * Respawn bluetooth daemon if crashed.
++
++  [ Evan Broder ]
++  * Eliminate the /etc/default/bluetooth conffile as it's not the Upstart
++    way. Transition the BLUETOOTH_ENABLED variable to an Upstart override
++    variable if it's been changed.
++
++ -- Evan Broder <evan@ebroder.net>  Wed, 07 Mar 2012 11:33:02 -0800
++
++bluez (4.98-2ubuntu3) precise; urgency=low
++
++  * debian/patches/enable_audio_profiles.patch: properly enable the Source
++    profile, its state is checked twice, once in audio/a2dp.c again which was
++    not taken into account in the previous upload. (LP: #948613)
++
++ -- Mathieu Trudel-Lapierre <mathieu-tl@ubuntu.com>  Wed, 07 Mar 2012 14:36:24 -0500
++
++bluez (4.98-2ubuntu2) precise; urgency=low
++
++  * debian/patches/enable_audio_profiles.patch: enable the Gateway and Source
++    audio profiles by default. (LP: #948613)
++
++ -- Mathieu Trudel-Lapierre <mathieu-tl@ubuntu.com>  Wed, 07 Mar 2012 10:44:35 -0500
++
++bluez (4.98-2ubuntu1) precise; urgency=low
++
++  * Merge with Debian unstable. Remaining Ubuntu changes:
++    - Upstart support:
++      o Add debian/bluez.bluetooth.upstart.
++      o debian/rules: Drop -DEB_UPDATE_RCD_PARAMS
++      o Disable 07-fix-639356.patch and don't install 97-bluetooth.rules (in
++        debian/bluez.install) and debian/bluez-udev (in debian/rules), we
++        don't want to use the udev rules to start bluez. The upstart job does
++        that already.
++    - debian/bluez-alsa.install: Install ALSA bluetooth configuration into the
++      right place for ALSA 1.0.25.
++    - Add debian/source_bluez.py Apport package hook. Install in
++      debian/bluez.install.
++    - debian/control: Build against libnl3-dev, not libnl-dev.
++    - debian/socket_audio.patch: re-enable the socket API for the bluetooth
++      audio manager. This reverts an upstream change that switches to the
++      MediaEndpoint DBus API by default, but it looks like PulseAudio isn't
++      quite ready to use that yet. (LP #918736)
++    - Add sbc_mmx.patch: Fix building with gcc 4.7. Not applied right now.
++    - Drop debian/bluez.preinst and debian/bluez-alsa.preinst: Obsolete
++      conffile migrations, 10.04 LTS has a much newer version.
++  * 4.98-2 fixes building C++ apps. (LP: #927097)
++
++ -- Martin Pitt <martin.pitt@ubuntu.com>  Wed, 22 Feb 2012 10:51:07 +0100
++
++bluez (4.98-2) unstable; urgency=low
++
++  * Provides proximity.conf by bluez. (Closes: #656889)
++    Update debian/bluez.install. proximity.conf was installed to
++    etc/bluetooth/proximity.conf.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Wed, 01 Feb 2012 05:24:00 +0900
++
++bluez (4.98-1) unstable; urgency=low
++
++  * New upstream release.
++  * Update debian/bluetooth-dbus.conf.
++  * Update debian/control.
++    Add Multi-Arch: foreign to bluez.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Tue, 24 Jan 2012 05:35:09 +0900
++
++bluez (4.97-1) experimental; urgency=low
++
++  * New upstream release.
++  * Update debian/contorl.
++    - Add check (>= 0.9.8-1.1) to Build-Depends.
++  * Update debian/rules.
++    - Remove --enable-attrib, --enable-udevrules and --enable-configfiles 
++      from configure.
++    - Add --enable-time, --enable-alert and --enable-gatt-example to
++      configure.
++  * Update bluez-cups.install.
++    Fix cups backend into multiarch path. (Closes: #645884)
++  * Update man for l2test. (Closes: #649432)
++  * Update debian/patches/06-alsalib.patch
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Tue, 27 Dec 2011 17:19:00 +0900
++
++bluez (4.96-3) unstable; urgency=low
++
++  * Install debian/bluez-udev to /lib/udev/bluez-udev.
++    (Closes #639356, #643829)
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Fri, 30 Sep 2011 12:35:45 +0900
++
++bluez (4.96-2) unstable; urgency=low
++
++  * Add support static library of libbluetooth-dev. (Closes: #558742)
++    Don't include static library in bluez-alsa and bluez-gstreamer.
++  * Fix bluez udev rules attempt to access /usr when /usr may not be mounted.
++    Thanks to anomie@users.sourceforge.net. (Closes: #639356)
++  * Fix typo in debian/bluez.preinst. (Closes: #643321)
++    Thanks to Trent W. Buck.
++  * Remove dh-autoreconf and add '-Wl,--as-needed' to LDFLAGS.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Sun, 28 Sep 2011 01:50:05 +0900
++
++bluez (4.96-1) unstable; urgency=low
++
++  * New upstream release.
++    Applied some patch from Daniel Schaal. Thanks! (Closes: #636633)
++  * Add debug packages.
++    bluez-dbg and libbluetooth3-dbg.
++  * Add support systemd.
++  * Update debian/control.
++    - Add s390x to Architecture. (Closes: #636545)
++    - Add libreadline-dev to Build-Depends.
++  * Drop patchsys-quilt.mk snippet: superfluous with source
++    format 3.0 "(quilt)".
++  * Refresh patch.
++  * Switch to multiarch.
++  * Update debian/rules.
++    - Remove obsolete configure flags.
++    - Add new plugins (proximity, sap, wiimote, thermometer, dbusoob).
++    - Strip and move to .install files.
++    - Add LDFLAGS=-Wl,--as-needed to configure option.
++  * Add usr/bin/gatttool into bluez package.
++  * Update bluez.lintian-overrides.
++  * Update debian/copyright.
++    Update path of license file.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Thu, 04 Aug 2011 11:46:35 +0900
++
++bluez (4.94-3) unstable; urgency=low
++
++  * Add dh-autoreconf to Build-Depends. To support dh-autoreconf,
++    update debian/control and debian/rules.
++  * Update version and the install path for which libasound depended.
++    Add patch/06-alsalib.patch. Thanks for Steve Langasek and Jordi Mallach.
++    (Closes: #634976).
++  * Remove Andrea Veri from Uploaders.
++    Thank you for having maintained this package. (Closes: #635095)
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Sun, 24 Jul 2011 18:31:59 +0900
++
++bluez (4.94-2) unstable; urgency=medium
++
++  * Add udev to Replaces and Breaks field (Closes: #628904).
++  * Fix typo from deamon to daemon (Closes: 629901).
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Thu, 09 Jun 2011 21:48:21 +0900
++
++bluez (4.94-1) unstable; urgency=medium
++
++  * New upstream release.
++  * Update debian/control.
++    - Add ppc64 to Architecture.
++    - Add version depency of udev (Closes: #628904, #628765).
++  * Remove debian/patches/03_fix_udevdir.patch.
++    Applied to upstream.
++  * Update debian/bluez.bluetooth.init.
++    Applied patch from Cristian Ionescu-Idbohrn (Closes: #628491).
++  * Update debian/bluez.postinst.
++    Add abort-upgrade, abort-remove and abort-deconfigure target
++    to bluez.postinst.
++  * Fix return code of hid2hci.
++    Add patch 03-Fix-return-code-of-hid2hci.patch
++  * Fix work Logitech keyboard (Closes: #626975)
++    Add patch 04-Fix-bluetooth-hid2hci.rules.patch
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Wed, 01 Jun 2011 15:30:01 +0900
++
++bluez (4.93-3) unstable; urgency=low
++
++  * Fix install hid2hci to /lib/udev. 
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Tue, 31 May 2011 19:42:33 +0900
++
++bluez (4.93-2) unstable; urgency=low
++
++  * Update debian/README.Debian.gz.
++    Add description of bluez-simple-agent (Closes: #488306, #384680).
++  * Update debian/bluez_agent.udev and debian/bluez.bluetooth.init.
++    Fix path of hid2hci (Closes: #628491).
++  * Add debian/patches/03_fix_udevdir.patch.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Tue, 31 May 2011 18:04:29 +0900
++
++bluez (4.93-1) unstable; urgency=low
++
++  * New upstream release.
++  * Update debian/control.
++    - Add libudev-dev to Build-Depends.
++  * Update debian/bluetooth-dbus.conf.
++    Add policy for lp group.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Fri, 20 May 2011 10:31:07 +0900
++
++bluez (4.91-1) unstable; urgency=low
++
++  * New upstream release.
++  * Updte debian/control
++    + Update to S-V 3.9.2: no changes needed.
++    + Remove libdbus-1-dev from Build-Depends.
++      This is interpolated by libdbus-1-dev.
++  * Update debian/libbluetooth3.symbols.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Tue, 12 Apr 2011 11:50:49 +0900
++
++bluez (4.89-1) unstable; urgency=low
++
++  * New upstream release.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Sat, 05 Mar 2011 17:08:40 +0900
++
++bluez (4.87-2) unstable; urgency=low
++
++  * Upload to unstable.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Wed, 09 Feb 2011 01:38:45 +0900
++
++bluez (4.87-1) experimental; urgency=low
++
++  * New upstream release.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Wed, 26 Jan 2011 07:58:27 +0900
++
++bluez (4.86-1) experimental; urgency=low
++
++  * New upstream release.
++  * Update debian/rules.
++    - Enable health plugin and attrib plugin.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Mon, 24 Jan 2011 11:49:55 +0900
++
++bluez (4.84-1) experimental; urgency=low
++
++  * New upstream release.
++  * Update README.Debian.
++    - Update section of Keyboard and mouse support
++      (Closes: #599894, #535929).
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Wed, 12 Jan 2011 17:23:25 +0900
++
++bluez (4.82-1) experimental; urgency=low
++
++  * New upstream release.
++  * Add manpages of bluetooth-agent.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Mon, 20 Dec 2010 01:39:43 +0900
++
++bluez (4.81-1) experimental; urgency=low
++
++  * New upstream release.
++  * Drop patches/010_udev_rules_agent.patch (Closes: ##588034).
++    Connection of bluetooth is cut off after system start,
++    if applied this patch. And this patch is not already necessary.
++  * Disabled HAL (Closes: 599023).
++    Add patches/02_disable_hal.patch
++  * Update debian/rules
++    - Provide again bluetooth-agent utility (Closes: #598982).
++    - Remove --enable-netlink option of configure.
++      This option was not provided.
++  * Update debian/bluez.install
++    Remove path of plugins.
++  * Update libbluetooth-dev.install
++    Remove path of plugins.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Thu, 02 Dec 2010 12:17:48 +0900
++
++bluez (4.70-1) unstable; urgency=low
++
++  * New upstream release.
++  * Update debian/bluez.bluetooth.init (Closes: #593172).
++  * Update debian/bluez.preinst (Closes: #592982, #568301).
++  * Update debian/control.
++    - python-gobject and python-dbus move from Suggests to Depends.
++  * Replase bluetooth-agent to bluez-simple-agent.
++  * Some test program move to usr/bin.
++ 
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Fri, 03 Sep 2010 08:43:02 +0900
++
++bluez (4.69-1) unstable; urgency=low
++
++  * New upstream release (Closes: #589727).
++  * Update debian/control.
++    - bumped standards-version to 3.9.1.
++  * Update libbluetooth3.symbols.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Wed, 28 Jul 2010 13:44:34 +0900
++
++bluez (4.66-1) unstable; urgency=low
++
++  * New upstream release.
++  * Update debian/control.
++    - Add libcap-ng-dev to Build-depends. 
++  * Update debian/rules.
++    - Add serial.conf (Closes: #559672).
++    - Update configure option.
++      Remove --enable-manpages.
++      Change --enable-pcmciarules to --enable-pcmcia.
++      Add --enable-pnat, --enable-tracer, --enable-udevrules,
++          --enable-configfiles and --enable-capng.
++  * Add man file of hcitrace.
++  * Update udev rule (Closes: #535075).
++    Thanks to Sjoerd Simons.
++  * Add patch 01_lower_sink_ranking.patch (Closes: #571595).
++    Thanks to Sebastian Dröge.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Tue, 22 Jun 2010 12:45:57 +0900
++
++bluez (4.64-1) unstable; urgency=low
++
++  * New upstream release.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Sat, 15 May 2010 15:44:23 +0900
++
++bluez (4.63-2) unstable; urgency=low
++
++  * Remove some contents from debian/NEWS. (Closes: #579817)
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Thu, 06 May 2010 06:50:14 +0900
++
++bluez (4.63-1) unstable; urgency=low
++
++  * Update debian/control.
++    - Remove Filippo Giunchedi <filippo@debian.org> from uploaders.
++    - bumped standards-version to 3.8.4.
++  * Add man files.
++    bluetooth-agent.1, l2test.1.
++  * Update libbluetooth3.symbols.
++    Add hci_bustostr@Base, hci_read_inq_response_tx_power_level@Base,
++    hci_typetostr@Base, sdp_get_supp_feat@Base, sdp_set_supp_feat@Base
++  * Update debian/NEWS.
++  * Add debian/source/format.
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Tue, 20 Apr 2010 06:08:24 +0900
++
++bluez (4.60-1) unstable; urgency=low
++
++  * New upstream release.
++  * debian/control:
++    - Add Nobuhiro Iwamatsu to Uploaders (Closes #564569).
++
++ -- Nobuhiro Iwamatsu <iwamatsu@debian.org>  Sat, 23 Jan 2010 16:03:01 +0900
++
++bluez (4.57-1) unstable; urgency=low
++
++  * New upstream bug fix release.
++
++ -- Andrea Veri <andrea.veri89@gmail.com>  Thu, 12 Nov 2009 21:27:54 +0100
++
++bluez (4.56-2) unstable; urgency=low
++
++  * debian/control:
++    - makedev re-added as alternate depend of udev, as
++      it's needed by postints. Thanks to Guillem Jover
++      for the report. (Closes: #546860)
++
++ -- Andrea Veri <andrea.veri89@gmail.com>  Wed, 14 Oct 2009 00:19:19 +0200
++
++bluez (4.56-1) unstable; urgency=low
++
++  * New upstream release. (Closes: #539361)
++  * rctest man page is no more missing. (Closes: #535949)
++  * debian/control:
++    - bumped standards-version to 3.8.3. No changes needed.
++    - added myself into uploaders plus DM tag.
++    - removed makedev depends. (Closes: #546860)
++  * debian/copyright:
++    - added missing copyright holders.
++  * debian/patches/001_agent_fixes.patch:
++    - removed, applied upstream
++  * debian/patches/002_a2dpsink_marginal.patch:
++    - removed, applied upstream.
++  * debian/patches/005_l2ping_section.patch:
++    - removed, applied upstream.
++  * debian/rules:
++    - removed the hack to have man page installed correctly.
++      It has been fixed upstream and points to the right section. (8)
++  * debian/libbluetooth3.symbols:
++    - refreshed.
++  * debian/bluez.examples:
++    - test/test-* removed and added all needed examples by hand to avoid
++      the installation of useless stuff.
++
++ -- Andrea Veri <andrea.veri89@gmail.com>  Mon, 12 Oct 2009 15:40:02 +0200
++
++bluez (4.42-2) unstable; urgency=low
++
++  * Fix "Bashisms in init script" (Closes: #534511)
++  * Handle upgrade of old /etc/modprobe.d/bluez (Closes: #523050)
++  * Conflict/Replace bluez-audio in bluez (Closes: #535089)
++
++ -- Filippo Giunchedi <filippo@debian.org>  Tue, 30 Jun 2009 20:05:13 +0200
++
++bluez (4.42-1) unstable; urgency=low
++
++  * New upstream release
++    + drop not needed debian/patches/003_configure_amd64_rpath.patch
++  * Provide transitional bluez-audio to migrate to bluez-alsa and
++    bluez-gstreamer (Closes: #531449)
++  * Install README.Debian in binary bluez (Closes: #532018)
++  * Make bluez-{alsa,gstreamer} depend on bluez
++  * Switch to group bluetooth from netdev for authorized users
++    (Closes: #534118)
++  * Mention pand/hidd/dund move to bluez-compat in init script and default
++    (Closes: #532622)
++  * debian/patches/002_test_agent_newapi.patch port bluetooth-agent to new
++    D-Bus API
++  * Update to S-V 3.8.2: no changes  
++  * Introduce common SSD_OPTIONS in init script and sleep 1 on restart 
++
++ -- Filippo Giunchedi <filippo@debian.org>  Sun, 21 Jun 2009 14:01:04 +0200
++
++bluez (4.40-2) unstable; urgency=low
++
++  * Ship a libbluetooth3.symbols file instead of shlibs
++  * Ship more examples from test/, thus suggest: python-gobject and
++    python-dbus together with README.examples
++  * Provide a script in /lib/udev/bluez for waiting on /usr being available
++    and a patch udev rules to use it
++
++ -- Filippo Giunchedi <filippo@debian.org>  Tue, 26 May 2009 00:02:53 +0200
++
++bluez (4.40-1) unstable; urgency=low
++
++  * New upstream release
++    - scripts/bluetooth.rules -> scripts/bluetooth-serial.rules
++  * Upload to unstable
++  * Change usage for hid2hci: install udev rules and issue a warning from init
++    script
++
++ -- Filippo Giunchedi <filippo@debian.org>  Fri, 22 May 2009 14:56:07 +0200
++
++bluez (4.34-0exp1) experimental; urgency=low
++
++  * First upload of bluez 4.x (Closes: #499529)
++    - include parts of the packaging from ubuntu, thanks!
++    - bluez-utils and bluez-libs are now a single source package 
++    - libbluetooth2 -> libbluetooth3 bump
++    - conflict bluez with bluez-utils (<= 3.36-3)
++    - update debian/copyright, thanks to Nobuhiro Iwamatsu
++  * Remove hid2hci patches/script
++  * Remove broken link to documentation (Closes: #504675)
++  * Install a sample commandline agent from test/ into bluetooth-agent
++    - add 001_test_agent_default_adapter.patch to get the default adapter
++  * Install test/simple-agent and test/list-devices as examples
++  * Remove old commented code from maintainer scripts (pcmcia-support postinst
++    and bluez preinst)
++  * Update watch file to match bluez only
++  * Add #DEBHELPER# to debian/bluez-utils.postrm
++  * Update to S-V 3.8.1: no changes needed
++  * Fix lintian warnings:
++    - add -e to remaining maintainer scripts
++    - remove full path to update-rc.d in debian/bluez.postinst
++    - override "bluez-utils: maintainer-script-empty postrm" for transitional
++      bluez-utils postrm
++  * Use 7 in debian/compat
++  * Fix debian/bluez.preinst to use dpkg-query, thus removing the lintian
++    override
++
++ -- Filippo Giunchedi <filippo@debian.org>  Wed, 01 Apr 2009 12:20:01 +0200
++
++bluez (4.29-0ubuntu1) jaunty; urgency=low
++
++  * New upstream version (LP: #326811)
++    - Use AVRCP version 1.0 for now.
++    - Decrease AVDTP idle timeout to one second.
++    - Delay AVRCP connection when remote device connects A2DP.
++    - Add workaround for AVDTP stream setup with broken headsets.
++    - Add missing three-way calling feature bit for Handsfree.
++    - Fix handsfree callheld indicator updating.
++    - Fix parsing of all AT commands within the buffer.
++    - Fix authentication replies when disconnected.
++    - Fix handling of debug combination keys.
++    - Fix handling of changed combination keys.
++    - Fix handling of link keys when using no bonding.
++    - Fix handling of invalid/unknown authentication requirements.
++    - Fix closing of L2CAP raw socket used for dedicated bonding. 
++
++ -- Baptiste Mille-Mathias <baptiste.millemathias@gmail.com>  Sun, 08 Feb 2009 10:48:36 +0100
++
++bluez (4.28-0ubuntu1) jaunty; urgency=low
++
++  * New upstream version. (LP: #324492)
++    - Add AVDTP signal fragmentation support.
++    - Add more SBC performance optimizations.
++    - Add more SBC audio quality improvements.
++    - Use native byte order for audio plugins.
++    - Set the adapter alias only after checking the EIR data.
++    - Fix auto-disconnect issue with explicit A2DP connections.
++    - Fix invalid memory access of ALSA plugin.
++    - Fix compilation with -Wsign-compare.
++
++ -- Baptiste Mille-Mathias <baptiste.millemathias@gmail.com>  Mon, 02 Feb 2009 21:57:08 +0100
++
++bluez (4.27-0ubuntu1) jaunty; urgency=low
++
++  * New upstream version. (LP: #304784)
++    - Improves interoperability and security handling
++      with Bluetooth 2.1 based devices.
++
++ -- Mario Limonciello <mario_limonciello@dell.com>  Tue, 27 Jan 2009 12:44:39 -0600
++
++bluez (4.25-0ubuntu6) jaunty; urgency=low
++
++  * Drop previous patch, bluez is a bit strange and this is basically ok.
++
++ -- Scott James Remnant <scott@ubuntu.com>  Mon, 19 Jan 2009 17:01:14 +0000
++
++bluez (4.25-0ubuntu5) jaunty; urgency=low
++
++  * debian/patches/ubuntu_dbus_policy.patch:
++    - Drop send_interface allow which isn't service-specific.  LP: #318740. 
++
++ -- Scott James Remnant <scott@ubuntu.com>  Mon, 19 Jan 2009 15:38:43 +0000
++
++bluez (4.25-0ubuntu4) jaunty; urgency=low
++
++  * Add Breaks to ensure the right udev version is used.
++
++ -- Scott James Remnant <scott@ubuntu.com>  Fri, 09 Jan 2009 11:35:06 +0000
++
++bluez (4.25-0ubuntu3) jaunty; urgency=low
++
++  * debian/hid2hci.rules: Update to use ATTRS{} instead of SYSFS{}
++
++ -- Scott James Remnant <scott@ubuntu.com>  Wed, 07 Jan 2009 14:18:52 +0000
++
++bluez (4.25-0ubuntu2) jaunty; urgency=low
++
++  * debian/rules: Install rules into /lib/udev/rules.d
++  * debian/bluez.preinst: Remove old rule if unchanged.
++
++ -- Scott James Remnant <scott@ubuntu.com>  Wed, 07 Jan 2009 11:35:39 +0000
++
++bluez (4.25-0ubuntu1) jaunty; urgency=low
++
++  * New upstream release. (LP: #312087)
++
++ -- Baptiste Mille-Mathias <baptiste.millemathias@gmail.com>  Tue, 30 Dec 2008 19:53:44 +0100
++
++bluez (4.21-0ubuntu1) jaunty; urgency=low
++
++  * New upstream version. (LP: #304109)
++
++ -- Mario Limonciello <mario_limonciello@dell.com>  Wed, 03 Dec 2008 15:56:03 -0600
++
++bluez (4.17-0ubuntu1) jaunty; urgency=low
++
++  * New upstream version. (LP: #284039)
++  * Drop the following patches that landed upstream:
++    - logitech_5500_ids.patch
++    - dell_bt_365.patch
++    - sco_connect_git.patch
++
++ -- Mario Limonciello <mario_limonciello@dell.com>  Wed, 05 Nov 2008 13:28:35 -0600
++
++bluez (4.12-0ubuntu5) intrepid; urgency=low
++
++  * Add debian/hid2hci.rules to enable running hid2hci
++    as soon as some bluetooth dongles get plugged in. (LP: #288294)
++  * debian/bluez.postinst:
++    - Update udev rules on postinst.
++  * debian/rules:
++    - Install debian/hid2hci.rules to 62-bluez-hid2hci.rules
++
++ -- Mario Limonciello <superm1@ubuntu.com>  Sat, 25 Oct 2008 23:32:00 -0500
++
++bluez (4.12-0ubuntu4) intrepid; urgency=low
++
++  * Add hid2hci.patch to enable hid2hci to be ran after
++    suspending a machine. (LP: #268877)
++  * debian/rules:
++    - Install new script from above patch.
++  * Add logitech_5500_ids.patch for enabling hid2hci on
++    more logitech devices. (LP: #272352)
++
++ -- Mario Limonciello <mario_limonciello@dell.com>  Wed, 22 Oct 2008 16:01:59 -0500
++
++bluez (4.12-0ubuntu3) intrepid; urgency=low
++
++  * debian/bluez.postinst:
++    - Don't show output for MAKEDEV. (LP: 280360)
++  * Add dell_bt_365.patch which will enable putting the Dell BT365
++    adapter into HCI mode upon bootup. (LP: #286724)
++  * debian/control:
++    - Add one more binary package for old compatibility binaries. (LP: #281580)
++  * debian/rules:
++    - Enable compatibility binaries.  These are HIGHLY discouraged from usage
++      and will not necessarily be here in the future.
++  * debian/bluez.install:
++    - Adjust what binaries get installed, to be able to pull out hidd, dund,
++      and pand as necessary.
++
++ -- Mario Limonciello <mario_limonciello@dell.com>  Mon, 20 Oct 2008 20:37:24 -0500
++
++bluez (4.12-0ubuntu2) intrepid; urgency=low
++
++  * debian/control:
++    - Move libbluetooth3 to the top of the list so that it is the
++      package that gets to keep the real changelog rather than symlinks.
++    - Only Replaces: packages rather than conflicts to help with 
++      upgrades (LP: #279954)
++
++ -- Mario Limonciello <mario_limonciello@dell.com>  Tue, 07 Oct 2008 16:32:31 -0500
++
++bluez (4.12-0ubuntu1) intrepid; urgency=low
++
++  * Initial Release. (LP: #274950)
++    - This package replaces bluez-utils and bluez-libs source packages.
++    - It was generated by merging the contents of bluez-utils and bluez-libs
++      and updating content.
++    - Legacy functionality for hidd, dund, and pand are not present, and 
++      have been removed from all configuration files.
++  * This release introduces encryption (LP: #182191)
++  * debian/patches:
++    - bluez-utils-oui-usage.patch was borrowed from the Fedora 10 packaging.
++    - sco-connect-git.patch was taken from bluez git shortly after 4.12 release.
++      It should "help" with some sco headset issues.
++  * debian/control:
++    - Update different packages per upstream's recommendations.
++    - Update conflicts/replaces for earlier packages.
++    - Add a transitional bluez-utils package to help with the transition.
++
++ -- Mario Limonciello <superm1@ubuntu.com>  Tue, 07 Oct 2008 12:10:29 -0500
+diff -Naur bluez-4.98/debian/compat bluez-4.98-2ubuntu7-sixaxis.1/debian/compat
+--- bluez-4.98/debian/compat	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/compat	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1 @@
++7
+diff -Naur bluez-4.98/debian/control bluez-4.98-2ubuntu7-sixaxis.1/debian/control
+--- bluez-4.98/debian/control	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/control	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,172 @@
++Source: bluez
++Section: admin
++Priority: optional
++Maintainer: Ubuntu Developers <ubuntu-devel-discuss@lists.ubuntu.com>
++XSBC-Original-Maintainer: Debian Bluetooth Maintainers <pkg-bluetooth-maintainers@lists.alioth.debian.org>
++Uploaders: Nobuhiro Iwamatsu <iwamatsu@debian.org>
++Build-Depends: debhelper (>= 8.1.3), cdbs (>= 0.4.93), quilt,
++               autotools-dev,
++               flex,
++               bison,
++               gstreamer-tools,
++               libasound2-dev (>= 1.0.24.1),
++               libdbus-glib-1-dev,
++               libglib2.0-dev (>= 2.16),
++               libgstreamer0.10-dev (>= 0.10.30),
++               libgstreamer-plugins-base0.10-dev (>= 0.10.30),
++               libnl-3-dev,
++               libsndfile1-dev,
++               libusb-dev,
++               libcap-ng-dev,
++               libudev-dev,
++               libreadline-dev,
++               libusb-1.0-0-dev,
++               check (>= 0.9.8-1.1)
++Vcs-Svn: svn://svn.debian.org/svn/pkg-bluetooth/packages/bluez/trunk
++Vcs-Browser: http://svn.debian.org/wsvn/pkg-bluetooth/packages/bluez/trunk
++Homepage: http://www.bluez.org
++Standards-Version: 3.9.2
++
++Package: libbluetooth3
++Section: libs
++Conflicts: libsdp2 (<= 1.5-2)
++Replaces: libsdp2 (<= 1.5-2)
++Pre-Depends: ${misc:Pre-Depends}
++Depends: ${shlibs:Depends}, ${misc:Depends}
++Multi-Arch: same
++Architecture: amd64 armel i386 ia64 mips mipsel powerpc s390 s390x sparc alpha armhf avr32 hppa m68k powerpcspe sh4 sparc64 ppc64
++Description: Library to use the BlueZ Linux Bluetooth stack
++ BlueZ is the official Linux Bluetooth protocol stack. It is an Open Source
++ project distributed under GNU General Public License (GPL).
++
++Package: libbluetooth3-dbg
++Section: debug
++Priority: extra
++Architecture: amd64 armel i386 ia64 mips mipsel powerpc s390 s390x sparc alpha armhf avr32 hppa m68k powerpcspe sh4 sparc64 ppc64
++Depends: ${misc:Depends}, libbluetooth3 (= ${binary:Version})
++Description: Library to use the BlueZ Linux Bluetooth stack with debugging symbols
++ BlueZ is the official Linux Bluetooth protocol stack. It is an Open Source
++ project distributed under GNU General Public License (GPL).
++ .
++ This package contains the debugging symbols.
++
++Package: libbluetooth-dev
++Section: libdevel
++Provides: libbluetooth3-dev
++Conflicts: libbluetooth-dev, libsdp2-dev (<= 1.5.2), bluez-pan
++Replaces: libsdp2-dev (<= 1.5.2)
++Depends: libbluetooth3 (= ${binary:Version}), libc6-dev | libc-dev, ${misc:Depends}
++Suggests: pkg-config
++Priority: extra
++Architecture: amd64 armel i386 ia64 mips mipsel powerpc s390 s390x sparc alpha armhf avr32 hppa m68k powerpcspe sh4 sparc64 ppc64
++Description: Development files for using the BlueZ Linux Bluetooth library
++ BlueZ is the official Linux Bluetooth protocol stack. It is an Open Source
++ project distributed under GNU General Public License (GPL).
++
++Package: bluetooth
++Architecture: all
++Depends: bluez
++Recommends: bluez-alsa, bluez-cups, bluez-gstreamer
++Description: Bluetooth support
++ This package provides all of the different plugins supported
++ by the Bluez bluetooth stack.
++
++Package: bluez
++Architecture: amd64 armel i386 ia64 mips mipsel powerpc s390 s390x sparc alpha armhf avr32 hppa m68k powerpcspe sh4 sparc64 ppc64
++Pre-Depends: ${misc:Pre-Depends}
++Depends: ${shlibs:Depends}, ${misc:Depends}, ${python:Depends}, module-init-tools, udev (>= 170-1), lsb-base, dbus, python-dbus
++Replaces: bluez-input, bluez-network, bluez-serial, bluez-utils (<= 3.36-3), bluez-audio (<= 3.36-3), udev (<< 170-1)
++Conflicts: bluez-utils (<= 3.36-3), bluez-audio (<= 3.36-3)
++Breaks: udev (<< 170-1)
++Multi-Arch: foreign
++Description: Bluetooth tools and daemons
++ This package contains tools and system daemons for using Bluetooth devices.
++ .
++ BlueZ is the official Linux Bluetooth protocol stack. It is an Open Source
++ project distributed under GNU General Public License (GPL).
++
++Package: bluez-dbg
++Section: debug
++Priority: extra
++Architecture: amd64 armel i386 ia64 mips mipsel powerpc s390 s390x sparc alpha armhf avr32 hppa m68k powerpcspe sh4 sparc64 ppc64
++Depends: ${misc:Depends}, bluez (= ${binary:Version}), libbluetooth3-dbg (= ${binary:Version})
++Description: Bluetooth tools and daemons (with debugging symbols)
++ This package contains tools and system daemons for using Bluetooth devices.
++ .
++ BlueZ is the official Linux Bluetooth protocol stack. It is an Open Source
++ project distributed under GNU General Public License (GPL).
++ .
++ This package contains the debugging symbols.
++
++Package: bluez-alsa
++Replaces: bluez-audio
++Architecture: amd64 armel i386 ia64 mips mipsel powerpc s390 s390x sparc alpha armhf avr32 hppa m68k powerpcspe sh4 sparc64 ppc64
++Multi-Arch: same
++Depends: ${shlibs:Depends}, ${misc:Depends}, bluez
++Description: Bluetooth ALSA support
++ This package contains a driver operate with the ALSA stack.
++ .
++ BlueZ is the official Linux Bluetooth protocol stack. It is an Open Source
++ project distributed under GNU General Public License (GPL).
++
++Package: bluez-gstreamer
++Architecture: amd64 armel i386 ia64 mips mipsel powerpc s390 s390x sparc alpha armhf avr32 hppa m68k powerpcspe sh4 sparc64 ppc64
++Depends: ${shlibs:Depends}, ${misc:Depends}, bluez
++Replaces: bluez-audio
++Description: Bluetooth GStreamer support
++ This package contains a plugin to operate with GStreamer applications.
++ .
++ BlueZ is the official Linux Bluetooth protocol stack. It is an Open Source
++ project distributed under GNU General Public License (GPL).
++
++Package: bluez-cups
++Architecture: amd64 armel i386 ia64 mips mipsel powerpc s390 s390x sparc alpha armhf avr32 hppa m68k powerpcspe sh4 sparc64 ppc64
++Depends: ${shlibs:Depends}, cups, ${misc:Depends}
++Description: Bluetooth printer driver for CUPS
++ This package contains a driver to let CUPS print to Bluetooth-connected
++ printers.
++ .
++ BlueZ is the official Linux Bluetooth protocol stack. It is an Open Source
++ project distributed under GNU General Public License (GPL).
++
++Package: bluez-pcmcia-support
++Architecture: amd64 armel i386 ia64 mips mipsel powerpc s390 s390x sparc alpha armhf avr32 hppa m68k powerpcspe sh4 sparc64 ppc64
++Priority: extra
++Depends: pcmciautils, ${misc:Depends}
++Recommends: setserial
++Description: PCMCIA support files for BlueZ 2.0 Bluetooth tools
++ This package contains files to enable PCMCIA card services to recognise
++ and initialise PCMCIA Bluetooth devices.
++ .
++ BlueZ is the official Linux Bluetooth protocol stack. It is an Open Source
++ project distributed under GNU General Public License (GPL).
++
++Package: bluez-compat
++Architecture: amd64 armel i386 ia64 mips mipsel powerpc s390 s390x sparc alpha armhf avr32 hppa m68k powerpcspe sh4 sparc64 ppc64
++Depends: ${shlibs:Depends}, ${misc:Depends}
++Description: BlueZ 3.x compatibility binaries
++ This package provides the legacy binaries that were reminiscent of the
++ BlueZ 3.x pairing methods.  These binaries are not supported, and will
++ go away again in the future. The provided binaries are:
++ .
++ hidd
++ dund
++ pand
++
++Package: bluez-utils
++Depends: bluetooth
++Architecture: all
++Section: oldlibs
++Priority: extra
++Description: Transitional package
++ This is a transitional package to assist with moving people to the
++ BlueZ 4.x stack.
++
++Package: bluez-audio
++Depends: bluez-alsa (>= 4.94-3), bluez-gstreamer (>= 4)
++Architecture: all
++Section: oldlibs
++Priority: extra
++Description: Transitional package
++ This is a transitional package to assist with moving people to the
++ BlueZ 4.x stack.
+diff -Naur bluez-4.98/debian/copyright bluez-4.98-2ubuntu7-sixaxis.1/debian/copyright
+--- bluez-4.98/debian/copyright	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/copyright	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,112 @@
++This package was debianized by Edd Dumbill <edd@usefulinc.com> on
++Sat, 13 Apr 2002 16:09:02 +0100.
++
++It was downloaded from http://www.bluez.org/
++
++BlueZ - Bluetooth protocol stack for Linux
++
++Copyright:
++	Copyright (C) 2001-2009  Marcel Holtmann <marcel@holtmann.org>
++	Copyright (C) 2006-2009  Nokia Corporation
++	Copyright (C) 2000-2003  Maxim Krasnyansky <maxk@qualcomm.com>
++	Copyright (C) 2002-2003  Jean Tourrilhes <jt@hpl.hp.com>
++	Copyright (C) 2007-2008  Frederic Dalleau <fdalleau@free.fr>
++	Copyright (C) 2007-2008  Texas Instruments, Inc.
++	Copyright (C) 2000-2005  CSR Ltd.
++	Copyright (C) 2005-2008  Brad Midgley <bmidgley@xmission.com>
++	Copyright (C) 2007-2008  David Stockwell <dstockwell@frequency-one.com>
++	Copyright (C) 2007-2008  Fabien Chevalier <fabchevalier@free.fr>
++	Copyright (C) 2005-2006  Claudio Takahasi <claudio.takahasi@indt.org.br>
++	Copyright (C) 2006-2007  Luiz von Dentz <luiz.dentz@indt.org.br>
++	Copyright (C) 2005-2007  Johan Hedberg <johan.hedberg@nokia.com>
++	Copyright (C) 2005-2006  Brad Midgley <bmidgley@xmission.com>
++	Copyright (C) 2004-2005  Henryk Ploetz <henryk@ploetzli.ch>
++	Copyright (C) 2002-2003  Stephen Crane <steve.crane@rococosoft.com>
++	Copyright (C) 2000-2001  Qualcomm Incorporated
++	Copyright (C) 2008	 Joao Paulo Rechi Vita
++	Copyright (C) 2009	 Lennart Poettering
++	Copyright (C) 2004	 Scott James Remnant <scott@netsplit.com>
++	Copyright (C) 2009       Intel Corporation        
++
++License:
++	audio/
++		a2dp.c a2dp.h avdtp.c avdtp.h control.c control.h device.c device.h
++		gateway.c gateway.h headset.c headset.h main.c manager.c manager.h
++		sink.c sink.h telephony-dummy.c telephony-maemo.c telephony.h
++		unix.c unix.h
++
++		License: GPL version 2 or any later version
++
++		gsta2dpsink.c gsta2dpsink.h gstavdtpsink.c
++		gstavdtpsink.h gstbluetooth.c gstrtpsbcpay.c gstrtpsbcpay.h
++		gstsbcdec.c gstsbcdec.h gstsbcenc.c gstsbcenc.h
++		gstsbcparse.c gstsbcparse.h gstsbcutil.c gstsbcutil.h
++		pcm_bluetooth.c gstbluetooth.c: ctl_bluetooth.c
++		ipc.c ipc.h rtp.h
++		ipctest.c
++
++		License: LGPL version 2.1 or any later version
++
++	sbc/
++		formats.h sbcdec.c sbcenc.c sbcinfo.c
++		sbctester.c
++
++		License: GPL version 2 or any later version
++		
++		sbc.c sbc.h
++		sbc_math.h sbc_primitives.c sbc_primitives.h
++		sbc_primitives_mmx.c sbc_primitives_mmx.h sbc_primitives_neon.c
++		sbc_primitives_neon.h sbc_tables.h
++
++		License: LGPL version 2.1 or any later version
++
++	tools/
++		ubcsp.c ubcsp.h
++
++		License: MIT License
++   
++		Permission is hereby granted, free of charge, to any person
++		obtaining a copy of this software and associated documentation
++		files (the "Software"), to deal in the Software without
++		restriction, including without limitation the rights to use,
++		copy, modify, merge, publish, distribute, sublicense, and/or sell
++		copies of the Software, and to permit persons to whom the 
++		Software is furnished to do so, subject to the following
++		conditions:
++    
++		The above copyright notice and this permission notice shall be
++		included in all copies or substantial portions of the Software.
++
++		THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
++		EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
++		OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND 
++		NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
++		HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
++		WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
++		FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
++		OTHER DEALINGS IN THE SOFTWARE.
++
++		avctrl.c bccmd.c avinfo.c
++		ciptool.c csr.c csr.h csr_3wire.c csr_bcsp.c csr_h4.c
++		csr_hci.c csr_usb.c dfu.c dfu.h dfubabel.c dfutool.c
++		hciattach.h hciattach_st.c hciattach_tialt.c hid2hci.c ppporc.c
++		hciattach_ti.c
++		hciattach.c hciconfig.c hcitool.c l2ping.c
++		hcisecfilter.c sdptool.c
++
++		License: GPL version 2 or any later version
++
++	doc/
++		All files.
++		
++		License: GFDL version 1.1 or any later version
++		No Invariant Sections, no Front-Cover Texts, and no Back-Cover Texts.
++
++	other:
++		License: GPL version 2 or any later version
++
++On Debian GNU/Linux systems, the complete text of the GNU General Public
++License can be found in `/usr/share/common-licenses/GPL-2', the GNU Lesser
++General Public License can be found in `/usr/share/common-licenses/LGPL-2.1' and
++the GNU Free Documentation License can be found in
++`/usr/share/common-licenses/GFDL'.
+diff -Naur bluez-4.98/debian/hcitrace.1 bluez-4.98-2ubuntu7-sixaxis.1/debian/hcitrace.1
+--- bluez-4.98/debian/hcitrace.1	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/hcitrace.1	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,22 @@
++.TH HCITRACE "1" "June 2010"
++.SH NAME
++hcitrace \- hcitrace daemon
++.SH SYNOPSIS
++.B hcitrace
++.SH DESCRIPTION
++\fBhcitrace\fP daemon allow per advanced tracing capabilities 
++with multiple HCI controllers per stream.
++
++.SH USAGE
++hcitrace [OPTION...]
++
++Help Options:
++  \fB-h\fP, \fB--help\fP         Show help options
++
++Application Options:
++  \fB-n\fP, \fB--nodaemon\fP     Don't run as daemon in background
++  \fB-d\fP, \fB--debug\fP        Enable debug information output
++
++.SH AUTHOR
++This manual page was written by Nobuhiro Iwamatsu <iwamatsu@debian.org>,
++for the Debian GNU/Linux system (but may be used by others).
+diff -Naur bluez-4.98/debian/l2test.1 bluez-4.98-2ubuntu7-sixaxis.1/debian/l2test.1
+--- bluez-4.98/debian/l2test.1	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/l2test.1	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,50 @@
++.TH L2TEST "1" "January 2012"
++.SH NAME
++l2test \- L2CAP testing
++.SH SYNOPSIS
++.B l2test
++.SH DESCRIPTION
++\fBl2test\fP is L2CAP testing program.
++
++.SH USAGE
++l2test <mode> [options] [bdaddr]
++
++Modes:
++  \fB-r\fP listen and receive
++  \fB-w\fP listen and send
++  \fB-d\fP listen and dump incoming data
++  \fB-x\fP listen, then send, then dump incoming data
++  \fB-s\fP connect and send
++  \fB-u\fP connect and receive
++  \fB-n\fP connect and be silent
++  \fB-y\fP connect, then send, then dump incoming data
++  \fB-c\fP connect, disconnect, connect, \.\.\.
++  \fB-m\fP multiple connects
++  \fB-p\fP trigger dedicated bonding
++  \fB-z\fP information request
++
++Options:
++  [\fB-b\fP bytes] [\fB-i\fP device] [\fB-P\fP psm] [\fB-J\fP cid]
++  [\fB-I\fP imtu] [\fB-O\fP omtu]
++  [\fB-L\fP seconds] enable SO_LINGER
++  [\fB-W\fP seconds] enable deferred setup
++  [\fB-B\fP filename] use data packets from file
++  [\fB-N\fP num] send num frames (default = infinite)
++  [\fB-C\fP num] send num frames before delay (default = 1)
++  [\fB-D\fP milliseconds] delay after sending num frames (default = 0)
++  [\fB-X\fP mode] select retransmission/flow-control mode
++  [\fB-Q\fP num] Max Transmit value (default = 3)
++  [\fB-Z\fP size] Transmission Window size (default = 63)
++  [\fB-F\fP fcs] use CRC16 check (default = 1)
++  [\fB-R\fP] reliable mode
++  [\fB-G\fP] use connectionless channel (datagram)
++  [\fB-U\fP] use sock stream
++  [\fB-A\fP] request authentication
++  [\fB-E\fP] request encryption
++  [\fB-S\fP] secure connection
++  [\fB-M\fP] become master
++  [\fB-T\fP] enable timestamps
++
++.SH AUTHOR
++This manual page was written by Nobuhiro Iwamatsu <iwamatsu@debian.org>,
++for the Debian GNU/Linux system (but may be used by others).
+diff -Naur bluez-4.98/debian/libbluetooth3.install bluez-4.98-2ubuntu7-sixaxis.1/debian/libbluetooth3.install
+--- bluez-4.98/debian/libbluetooth3.install	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/libbluetooth3.install	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,2 @@
++usr/lib/*/libbluetooth.so.3
++usr/lib/*/libbluetooth.so.3.*
+diff -Naur bluez-4.98/debian/libbluetooth3.symbols bluez-4.98-2ubuntu7-sixaxis.1/debian/libbluetooth3.symbols
+--- bluez-4.98/debian/libbluetooth3.symbols	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/libbluetooth3.symbols	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,215 @@
++libbluetooth.so.3 libbluetooth3 #MINVER#
++ ba2oui@Base 4.91
++ ba2str@Base 4.91
++ bachk@Base 4.91
++ bafprintf@Base 4.91
++ baprintf@Base 4.91
++ basnprintf@Base 4.91
++ basprintf@Base 4.91
++ baswap@Base 4.91
++ batostr@Base 4.91
++ bt_compidtostr@Base 4.91
++ bt_error@Base 4.91
++ bt_free@Base 4.91
++ bt_malloc@Base 4.91
++ bt_string_to_uuid@Base 4.91
++ bt_uuid128_create@Base 4.91
++ bt_uuid16_create@Base 4.91
++ bt_uuid32_create@Base 4.91
++ bt_uuid_cmp@Base 4.91
++ bt_uuid_to_string@Base 4.91
++ bt_uuid_to_uuid128@Base 4.91
++ hci_authenticate_link@Base 4.91
++ hci_bustostr@Base 4.91
++ hci_change_link_key@Base 4.91
++ hci_close_dev@Base 4.91
++ hci_cmdtostr@Base 4.91
++ hci_commandstostr@Base 4.91
++ hci_create_connection@Base 4.91
++ hci_delete_stored_link_key@Base 4.91
++ hci_devba@Base 4.91
++ hci_devid@Base 4.91
++ hci_devinfo@Base 4.91
++ hci_dflagstostr@Base 4.91
++ hci_disconnect@Base 4.91
++ hci_dtypetostr@Base 4.91
++ hci_encrypt_link@Base 4.91
++ hci_exit_park_mode@Base 4.91
++ hci_for_each_dev@Base 4.91
++ hci_get_route@Base 4.91
++ hci_inquiry@Base 4.91
++ hci_le_add_white_list@Base 4.91
++ hci_le_clear_white_list@Base 4.91
++ hci_le_conn_update@Base 4.91
++ hci_le_create_conn@Base 4.91
++ hci_le_read_white_list_size@Base 4.91
++ hci_le_rm_white_list@Base 4.91
++ hci_le_set_advertise_enable@Base 4.91
++ hci_le_set_scan_enable@Base 4.91
++ hci_le_set_scan_parameters@Base 4.91
++ hci_lmtostr@Base 4.91
++ hci_lptostr@Base 4.91
++ hci_open_dev@Base 4.91
++ hci_park_mode@Base 4.91
++ hci_ptypetostr@Base 4.91
++ hci_read_afh_map@Base 4.91
++ hci_read_afh_mode@Base 4.91
++ hci_read_bd_addr@Base 4.91
++ hci_read_class_of_dev@Base 4.91
++ hci_read_clock@Base 4.91
++ hci_read_clock_offset@Base 4.91
++ hci_read_current_iac_lap@Base 4.91
++ hci_read_ext_inquiry_response@Base 4.91
++ hci_read_inq_response_tx_power_level@Base 4.91
++ hci_read_inquiry_mode@Base 4.91
++ hci_read_inquiry_scan_type@Base 4.91
++ hci_read_inquiry_transmit_power_level@Base 4.91
++ hci_read_link_policy@Base 4.91
++ hci_read_link_quality@Base 4.91
++ hci_read_link_supervision_timeout@Base 4.91
++ hci_read_local_commands@Base 4.91
++ hci_read_local_ext_features@Base 4.91
++ hci_read_local_features@Base 4.91
++ hci_read_local_name@Base 4.91
++ hci_read_local_oob_data@Base 4.91
++ hci_read_local_version@Base 4.91
++ hci_read_remote_ext_features@Base 4.91
++ hci_read_remote_features@Base 4.91
++ hci_read_remote_name@Base 4.91
++ hci_read_remote_name_cancel@Base 4.91
++ hci_read_remote_name_with_clock_offset@Base 4.91
++ hci_read_remote_version@Base 4.91
++ hci_read_rssi@Base 4.91
++ hci_read_simple_pairing_mode@Base 4.91
++ hci_read_stored_link_key@Base 4.91
++ hci_read_transmit_power_level@Base 4.91
++ hci_read_voice_setting@Base 4.91
++ hci_scoptypetostr@Base 4.91
++ hci_send_cmd@Base 4.91
++ hci_send_req@Base 4.91
++ hci_set_afh_classification@Base 4.91
++ hci_strtolm@Base 4.91
++ hci_strtolp@Base 4.91
++ hci_strtoptype@Base 4.91
++ hci_strtoscoptype@Base 4.91
++ hci_strtover@Base 4.91
++ hci_switch_role@Base 4.91
++ hci_typetostr@Base 4.91
++ hci_vertostr@Base 4.91
++ hci_write_afh_mode@Base 4.91
++ hci_write_class_of_dev@Base 4.91
++ hci_write_current_iac_lap@Base 4.91
++ hci_write_ext_inquiry_response@Base 4.91
++ hci_write_inquiry_mode@Base 4.91
++ hci_write_inquiry_scan_type@Base 4.91
++ hci_write_inquiry_transmit_power_level@Base 4.91
++ hci_write_link_policy@Base 4.91
++ hci_write_link_supervision_timeout@Base 4.91
++ hci_write_local_name@Base 4.91
++ hci_write_simple_pairing_mode@Base 4.91
++ hci_write_stored_link_key@Base 4.91
++ hci_write_voice_setting@Base 4.91
++ lmp_featurestostr@Base 4.91
++ lmp_strtover@Base 4.91
++ lmp_vertostr@Base 4.91
++ sdp_append_to_buf@Base 4.91
++ sdp_append_to_pdu@Base 4.91
++ sdp_attr_add@Base 4.91
++ sdp_attr_add_new@Base 4.91
++ sdp_attr_remove@Base 4.91
++ sdp_attr_replace@Base 4.91
++ sdp_attrid_comp_func@Base 4.91
++ sdp_close@Base 4.91
++ sdp_connect@Base 4.91
++ sdp_copy_record@Base 4.91
++ sdp_create@Base 4.91
++ sdp_data_alloc@Base 4.91
++ sdp_data_alloc_with_length@Base 4.91
++ sdp_data_free@Base 4.91
++ sdp_data_get@Base 4.91
++ sdp_device_record_register@Base 4.91
++ sdp_device_record_register_binary@Base 4.91
++ sdp_device_record_unregister@Base 4.91
++ sdp_device_record_unregister_binary@Base 4.91
++ sdp_device_record_update@Base 4.91
++ sdp_device_record_update_binary@Base 4.91
++ sdp_extract_attr@Base 4.91
++ sdp_extract_pdu@Base 4.91
++ sdp_extract_seqtype@Base 4.91
++ sdp_gen_pdu@Base 4.91
++ sdp_gen_record_pdu@Base 4.91
++ sdp_gen_tid@Base 4.91
++ sdp_general_inquiry@Base 4.91
++ sdp_get_access_protos@Base 4.91
++ sdp_get_add_access_protos@Base 4.91
++ sdp_get_database_state@Base 4.91
++ sdp_get_error@Base 4.91
++ sdp_get_group_id@Base 4.91
++ sdp_get_int_attr@Base 4.91
++ sdp_get_lang_attr@Base 4.91
++ sdp_get_profile_descs@Base 4.91
++ sdp_get_proto_desc@Base 4.91
++ sdp_get_proto_port@Base 4.91
++ sdp_get_record_state@Base 4.91
++ sdp_get_server_ver@Base 4.91
++ sdp_get_service_avail@Base 4.91
++ sdp_get_service_id@Base 4.91
++ sdp_get_service_ttl@Base 4.91
++ sdp_get_socket@Base 4.91
++ sdp_get_string_attr@Base 4.91
++ sdp_get_supp_feat@Base 4.91
++ sdp_get_uuidseq_attr@Base 4.91
++ sdp_list_append@Base 4.91
++ sdp_list_free@Base 4.91
++ sdp_list_insert_sorted@Base 4.91
++ sdp_list_remove@Base 4.91
++ sdp_pattern_add_uuid@Base 4.91
++ sdp_pattern_add_uuidseq@Base 4.91
++ sdp_process@Base 4.91
++ sdp_profile_uuid2strn@Base 4.91
++ sdp_proto_uuid2strn@Base 4.91
++ sdp_record_alloc@Base 4.91
++ sdp_record_free@Base 4.91
++ sdp_record_print@Base 4.91
++ sdp_record_register@Base 4.91
++ sdp_record_unregister@Base 4.91
++ sdp_record_update@Base 4.91
++ sdp_send_req_w4_rsp@Base 4.91
++ sdp_seq_alloc@Base 4.91
++ sdp_seq_alloc_with_length@Base 4.91
++ sdp_seq_append@Base 4.91
++ sdp_service_attr_async@Base 4.91
++ sdp_service_attr_req@Base 4.91
++ sdp_service_search_async@Base 4.91
++ sdp_service_search_attr_async@Base 4.91
++ sdp_service_search_attr_req@Base 4.91
++ sdp_service_search_req@Base 4.91
++ sdp_set_access_protos@Base 4.91
++ sdp_set_add_access_protos@Base 4.91
++ sdp_set_attrid@Base 4.91
++ sdp_set_group_id@Base 4.91
++ sdp_set_info_attr@Base 4.91
++ sdp_set_lang_attr@Base 4.91
++ sdp_set_notify@Base 4.91
++ sdp_set_profile_descs@Base 4.91
++ sdp_set_seq_len@Base 4.91
++ sdp_set_service_id@Base 4.91
++ sdp_set_supp_feat@Base 4.91
++ sdp_set_url_attr@Base 4.91
++ sdp_set_uuidseq_attr@Base 4.91
++ sdp_svclass_uuid2strn@Base 4.91
++ sdp_uuid128_cmp@Base 4.91
++ sdp_uuid128_create@Base 4.91
++ sdp_uuid128_to_uuid@Base 4.91
++ sdp_uuid16_cmp@Base 4.91
++ sdp_uuid16_create@Base 4.91
++ sdp_uuid16_to_uuid128@Base 4.91
++ sdp_uuid2strn@Base 4.91
++ sdp_uuid32_create@Base 4.91
++ sdp_uuid32_to_uuid128@Base 4.91
++ sdp_uuid_cmp@Base 4.91
++ sdp_uuid_extract@Base 4.91
++ sdp_uuid_to_proto@Base 4.91
++ sdp_uuid_to_uuid128@Base 4.91
++ str2ba@Base 4.91
++ strtoba@Base 4.91
+diff -Naur bluez-4.98/debian/libbluetooth-dev.install bluez-4.98-2ubuntu7-sixaxis.1/debian/libbluetooth-dev.install
+--- bluez-4.98/debian/libbluetooth-dev.install	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/libbluetooth-dev.install	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,4 @@
++usr/include/bluetooth
++usr/lib/*/libbluetooth.a
++usr/lib/*/libbluetooth.so
++usr/lib/*/pkgconfig
+diff -Naur bluez-4.98/debian/NEWS bluez-4.98-2ubuntu7-sixaxis.1/debian/NEWS
+--- bluez-4.98/debian/NEWS	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/NEWS	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,167 @@
++bluez-utils (4.40-1) unstable; urgency=low
++
++  This version includes a new hid2hci program which expects the vendor ID and
++  product ID of the device to be switched to HID/HCI mode, this means the
++  switching is no longer done in init script but via udev rules for supported
++  devices. Adding new devices can be done by dropping rules into
++  /etc/udev/rules.d/ similar to ones found in
++  /lib/udev/rules.d/62-bluez-hid2hci.rules or by manually running hid2hci, see
++  hid2hci(8) manpage for further information.
++
++  This version also ships a simple commandline agent (bluetooth-agent) to do
++  pairing on the command line 
++
++ -- Filippo Giunchedi <filippo@debian.org>  Fri, 22 May 2009 15:21:35 +0200
++
++bluez-utils (3.36-3) unstable; urgency=low
++
++  This version includes an new d-bus policy with updated access control.
++  As a result of this, only users of netdev group or which are in front of the
++  computer (i.e. match the at_console="true" rule) are able to communicate
++  with hcid via dbus. See also #510644.
++
++ -- Filippo Giunchedi <filippo@debian.org>  Thu, 08 Jan 2009 18:35:38 +0100
++
++bluez-utils (3.30-2) unstable; urgency=low
++
++  This upstream version switches the service infrastructure from external
++  processes to shared objects. Services (i.e. audio) are started automatically
++  and do not require a .service file in /etc/bluetooth/. audio.service will be
++  removed automatically by the upgrade unless modified.
++
++ -- Filippo Giunchedi <filippo@debian.org>  Mon, 14 Apr 2008 17:34:21 +0200
++
++bluez-utils (3.7-1) unstable; urgency=low
++
++  This version reverts the /etc/bluetooth/passkeys infrastructure as agents for
++  passkeys are not supposed to be system-wide.
++  A bluez-passkey-gnome is provided as a passkey agent, plus there's a example
++  passkey-agent in /usr/share/doc/bluez-utils/examples/passkey-agent.c 
++
++ -- Filippo Giunchedi <filippo@debian.org>  Sat,  7 Oct 2006 11:43:09 +0200
++
++bluez-utils (3.1-3) unstable; urgency=low
++
++  This version includes a new management for outgoing passkey (PIN) requests
++  while the incoming passkeys defaults to 1234 in /etc/bluetooth/hcid.conf.
++  See README.Debian for further informations. 
++
++ -- Filippo Giunchedi <filippo@debian.org>  Wed, 26 Jul 2006 11:37:14 +0200
++
++bluez-utils (3.1-1) unstable; urgency=low
++
++  This new upstream version removes the need for external pin helper, pin
++  requests are handled via dbus.  The default pin (or now-called "passkey") is
++  set to 1234 for backward compatibility.
++
++  Also, udev rules for pcmcia card are included along with
++  /lib/udev/bluetooth.sh (setserial required) in the bluez-pcmcia-support.
++
++ -- Filippo Giunchedi <filippo@debian.org>  Wed, 26 Jul 2006 11:37:02 +0200
++
++bluez-utils (2.24-1) unstable; urgency=low
++
++  This version moves /etc/{init.d,default}/bluez-utils to
++  /etc/{init.d,default}/bluetooth for LSB compilance.
++  If local modifications are detected the new files will be installed with
++  the ".dpkg-new" suffix
++
++ -- Filippo Giunchedi <filippo@debian.org>  Wed,  7 Jun 2006 13:57:35 +0200
++
++bluez-utils (2.19-1) unstable; urgency=high
++
++  * Includes new D-BUS support: sends signals for inquiry results and
++    remote name resolves.
++
++  * Also adds support for device-specific SDP records.
++
++ -- Edd Dumbill <ejad@debian.org>  Fri, 19 Aug 2005 01:12:02 +0100
++
++bluez-utils (2.9-1) unstable; urgency=low
++
++  * This release improves input device support: EPoX keyboards and
++    their new HID presenters should now work correctly in report
++    protocol mode.
++
++ -- Edd Dumbill <ejad@debian.org>  Sun,  8 Aug 2004 15:19:24 +0100
++
++bluez-utils (2.8-1) unstable; urgency=low
++
++  * Users of dongles with HID proxy capability (this is where the dongle
++    pretends to be a keyboard and mouse until it is switched into Bluetooth
++    mode, allowing Bluetooth input devices to be used in BIOS etc.) are
++    now supported.  The switch is made as part of the bluez-utils init
++    script.
++
++ -- Edd Dumbill <ejad@debian.org>  Mon, 14 Jun 2004 14:24:12 +0100
++
++bluez-utils (2.7-1) experimental; urgency=low
++
++  * Upstream has merged bluez-pan with this package.  You should
++    remove the /etc/init.d/bluez-pan script, and use 
++    /etc/default/bluez-utils to configure dund and pand, although
++    for the moment the old /etc/default/bluez-pan is also read.
++
++  * This source package now has Bluetooth printing support, which
++    is built into the bluez-cups binary package.
++
++  * DBUS support has been enabled in this build.  To use it, add
++    'dbus_pin_helper' into the options section, and comment out
++    the pin_helper.  DBUS-aware pin helpers such as that in
++    bluez-pin will now be used.
++
++  * Bluetooth HID devices (eg, mouse, keyboard) are now supported
++    for Linux 2.6.6 or better running the hidp patch from bluez.org.
++    If running these, set HIDD_ENABLED to 1 in /etc/default/bluez-utils
++    to enable support, then run hidd --connect <bdaddr> to connect
++    to your keyboard or mouse.
++
++ -- Edd Dumbill <ejad@debian.org>  Wed, 26 May 2004 12:43:08 +0100
++
++bluez-utils (2.6-1) experimental; urgency=low
++
++  * Upstream has merged bluez-sdp with this package. The sdp tools
++    are now in this package.  You should remove the /etc/init.d/bluez-sdp
++    script.
++
++  * All tools from /sbin now live in /usr/sbin: hciattach hciconfig
++    hcid l2ping.
++
++ -- Edd Dumbill <ejad@debian.org>  Thu,  6 May 2004 11:58:16 +0100
++
++bluez-utils (2.4-4) unstable; urgency=high
++
++  * If you still use the old 'bluepin' PIN assistant: note it has moved
++    from /bin/ to /usr/bin/.  You will need to update your hcid.conf
++    accordingly.  Even better, install bluez-pin and use the helper from
++    there instead.
++  * hcitool has also moved to /usr/bin, and l2ping to /sbin.
++
++ -- Edd Dumbill <ejad@debian.org>  Wed, 15 Jan 2004 18:37:32 +0000
++
++bluez-utils (2.4-3) unstable; urgency=low
++
++  * If you're using devfsd and a recent Linux kernel (2.4.22 or later, or
++    2.6.x), remove the file /etc/devfs/devices.d/bluez and run update-devfsd.
++    This will stop your system complaining when devfsd is started.  This
++    package no longer installs that file, but you must remove it yourself.
++    If you need it in future, you can find it in /usr/share/doc/bluez-utils.
++
++ -- Edd Dumbill <ejad@debian.org>  Wed, 14 Jan 2004 21:14:35 +0000
++
++bluez-utils (2.4-1) unstable; urgency=low
++
++  * The rfcomm program has changed slightly: you now need a "bind yes"
++    in each entry in /etc/bluetooth/rfcomm.conf to ensure they are bound
++    at startup time.  See man rfcomm for more details.
++
++ -- Edd Dumbill <ejad@debian.org>  Thu,  1 Jan 2004 18:38:35 +0100
++
++bluez-utils (2.3-2) unstable; urgency=low
++
++  * This package now depends on a new PIN helper bluez-pin.  If you are
++    upgrading this package and want to use the new helper instead of the
++    default one (highly recommended) then alter your pin_helper line in
++    /etc/bluetooth/hcid.conf to specify /usr/bin/bluez-pin.
++
++ -- Edd Dumbill <ejad@debian.org>  Thu, 28 Aug 2003 12:38:35 +0100
+diff -Naur bluez-4.98/debian/README.Debian bluez-4.98-2ubuntu7-sixaxis.1/debian/README.Debian
+--- bluez-4.98/debian/README.Debian	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/README.Debian	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,155 @@
++bluez for Debian
++================
++
++The /dev/rfcomm* serial devices entries are automatically created for using
++RFCOMM with legacy applications -- see rfcomm(8).  Users must be in group
++'dialout' to have privileges to use these devices.
++
++You can edit /etc/bluetooth/rfcomm.conf to have some rfcomm devices bound
++automatically at boot time.
++
++If you wish to install PCMCIA card services support for your Bluetooth
++devices you should install the bluez-pcmcia-support package.
++
++Some USB dongles require firmware to make them work: bluez-firmware from the
++"non-free" section provides the required firmware.
++
++
++Mailing lists and documentation
++-------------------------------
++The old sourceforge lists have been discontinued, the new lists can be found at:
++
++http://www.bluez.org/development/lists/
++
++plus a wiki at: http://wiki.bluez.org/
++
++PIN (or passkey) management
++---------------------------
++Interaction with the local user can be required while BT connection is
++being established (pairing process) and the PIN is not yet known or
++needs to be changed.
++
++To retrieve the passkey (or PIN) from the user a service program (agent)
++running in user's interactive session needs to be prepared and listen
++for requests of the bluez daemon when pairing begins.
++
++Examples of such programs are kblueplugd (kdebluetooth package) and
++bluetooth-applet (bluez-gnome or gnome-bluetooth packages). A minimal
++command-line agent is also provided by bluez-simple-agent.
++
++For example, you can execute bluez-simple-agent as follows.
++
++$ bluez-simple-agent hci0 XX:XX:XX:XX:XX:XX (Address of target device)
++RequestPinCode (/org/bluez/27392/hci0/dev_XX_XX_XX_XX_XX_XX)
++Enter PIN Code: 0000
++Release
++
++Headset support
++---------------
++There's support for bluetooth headset both via ALSA and GStreamer, respectively
++via bluez-alsa and bluez-gstreamer packages.
++
++ALSA
++~~~~
++You might setup your headset by discovering it with gnome-bluetooth, once setup
++add the following configuration to ~/.asoundrc:
++
++	pcm.bluetooth {
++		   type bluetooth
++		   device <BT address>
++	}
++
++then audio can be played with supported player, e.g. mplayer:
++
++	mplayer -ao alsa:device=bluetooth
++
++See also: http://wiki.bluez.org/wiki/HOWTO/AudioDevices
++
++Legacy daemons
++--------------
++The bluez-compat package includes old legacy daemons such as dund, pand and hidd
++for enabling dial-up, ethernet networking and input devices over bluetooth.
++
++Bluetooth Networking Quickstart with legacy daemons
+++++++++++++++++++++++++++++++++++++++++++++++++++++
++1. Start dund and pand at boot time
++ 
++2. PPP over RFCOMM
++
++This is what most devices call "LAN Access" or "Serial Access".  It
++uses normal PPP over a serial connection.  Most PDAs will be able to
++connect using this method.
++
++Use the 'dund' tool to accept incoming connections.  Configure pppd
++as per the instructions in the ppp package.  Then run:
++
++dund --listen --sdp --nodetach
++
++Try and connect your device and you'll see something like:
++
++dund[9801]: DUN daemon ver 1.1pre4
++dund[9811]: New connection from 00:02:31:24:17:6A
++
++The --sdp option causes the DUN access to be advertised to other
++devices via the SDP protocol.  Most devices need this in order to be
++able to connect.
++
++Run dund --help to see the various other options available to you.
++
++If you want to make an outgoing connection using PPP, for instance to
++a mobile phone, use the 'rfcomm' program from bluez-utils to bind a
++/dev/rfcommX serial port to the phone, and then then use pppd as you
++would with a normal modem.
++
++3. PAN
++
++The 'pand' tool allows you to use ethernet style networking over
++Bluetooth.  It creates a network interface on your machine that can be
++configured in the same way normal network devices are.
++
++For full details see the PAN HOWTO at
++<http://bluez.sourceforge.net/contrib/HOWTO-PAN>
++
++Keyboard and mouse support
++++++++++++++++++++++++++++++++++++++
++hidd daemon is included in a bluez-compat package. 
++We use bluez-simple-agent and bluez-test-input in bluez now.
++
++1. Discover you mouse or keyboard bluetooth address (bdaddr) by running
++   "hcitool scan".
++
++2. Start bluez-simple-agent
++
++    $ sudo bluez-simple-agent hci0 <bdaddr>
++    RequestPinCode (/org/bluez/22302/hci0/dev_00_XX_XX_XX_XX_XX)
++    Enter PIN Code: 0000 <-- Please input PIN code
++    Release
++    New device (/org/bluez/22302/hci0/dev_00_XX_XX_XX_XX_XX)
++
++    Bluetooth mouse set simple PIN code as "0000".
++    PIN code are different depending on mouse. 
++    Please check the PIN code of your mouse.
++
++3. With bluez-test-device, set *trusted* to the device.
++
++    $ sudo bluez-test-device trusted <bdaddr> yet
++
++	When you did not execute this, you use bluez-test-input after suspend
++	and resume (and reboot) have to connect a device again.
++
++4. With bluez-test-input, connected to the device.
++
++    $ sudo bluez-test-input connect <bdaddr>
++
++NOTE: If you want to use hidd daemon, please install bluez-compat package.
++
++   You must then connect to your keyboard or mouse using 
++   "sudo hidd --connect <bdaddr>".  
++   On first connection, pairing is likely and you should
++   press "connect" button on mice/keyboard, if any.  Mice normally have a
++   preset PIN which should be in the manufacturer's documentation, try 0000.
++   For keyboards, type the PIN on the Bluetooth keyboard and hit enter, and
++   then supply it to the passkey agent 
++   (using a cable-attached keyboard. e.g. bluez-simple-agent).
++   In future your keyboard or mouse should reconnect to your computer
++   automatically.  You must invoke hidd as root.
+diff -Naur bluez-4.98/debian/README.examples bluez-4.98-2ubuntu7-sixaxis.1/debian/README.examples
+--- bluez-4.98/debian/README.examples	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/README.examples	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,2 @@
++These examples are from the test/ directory of bluez distribution, you'll need
++python-gobject and python-dbus to run some of them.
+diff -Naur bluez-4.98/debian/rules bluez-4.98-2ubuntu7-sixaxis.1/debian/rules
+--- bluez-4.98/debian/rules	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/rules	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,79 @@
++#!/usr/bin/make -f
++# build rules for bluez
++
++include /usr/share/cdbs/1/rules/debhelper.mk
++include /usr/share/cdbs/1/class/autotools.mk
++include /usr/share/cdbs/1/rules/patchsys-quilt.mk
++
++LDFLAGS += -Wl,--as-needed
++
++DEB_DH_INSTALLINIT_ARGS = "--name=bluetooth"
++DEB_CONFIGURE_EXTRA_FLAGS := LDFLAGS=-Wl,--as-needed \
++                             --libdir=\$${prefix}/lib/$(DEB_HOST_MULTIARCH) \
++                             --enable-static \
++                             --disable-hal \
++                             --enable-sap \
++                             --enable-proximity \
++                             --enable-time \
++                             --enable-alert \
++                             --enable-health \
++                             --enable-pnat \
++                             --enable-gatt-example \
++                             --enable-gstreamer \
++                             --enable-alsa \
++                             --enable-usb \
++                             --enable-tracer \
++                             --enable-tools \
++                             --enable-bccmd \
++                             --enable-pcmcia \
++                             --enable-hid2hci \
++                             --enable-dfutool \
++                             --enable-hidd \
++                             --enable-pand \
++                             --enable-dund \
++                             --enable-cups \
++                             --enable-test \
++                             --enable-datafiles \
++                             --enable-debug \
++                             --enable-dbusoob \
++                             --enable-wiimote \
++                             --enable-thermometer \
++                             --enable-capng \
++                             --enable-cable \
++                             --with-systemdunitdir=/lib/systemd/system
++
++DEB_DESTDIR := $(CURDIR)/debian/tmp
++# for debug pakcages
++DEB_DBG_PACKAGES = bluez-dbg libbluetooth3-dbg
++
++TEST_PROGRAM_LIST = simple-agent simple-service test-adapter test-audio test-device \
++	test-discovery test-input test-manager test-network test-serial \
++	test-service test-telephony
++
++pre-build::
++	autoreconf --install
++
++install/bluez::
++	install -D -m 0755 $(CURDIR)/debian/bluez_agent.udev \
++		$(CURDIR)/debian/bluez/lib/udev/bluez
++
++	install -D -m 0755 $(CURDIR)/test/agent \
++		$(CURDIR)/debian/bluez/usr/bin/bluetooth-agent
++	for d in $(TEST_PROGRAM_LIST) ; do \
++		install -D -m 0755 $(CURDIR)/test/$$d \
++			$(CURDIR)/debian/bluez/usr/bin/bluez-$$d ; \
++	done
++
++	install -D -m 0644 $(CURDIR)/debian/README.examples \
++		$(CURDIR)/debian/bluez/usr/share/doc/bluez/examples/README
++
++binary-install/bluez-gstreamer::
++	LD_LIBRARY_PATH="$(CURDIR)/debian/tmp/usr/lib:$(LD_LIBRARY_PATH)" \
++		dh_gstscancodecs -pbluez-gstreamer
++
++binary-install/bluez::
++	install -D -m 0644 $(CURDIR)/debian/bluetooth-dbus.conf \
++		$(CURDIR)/debian/bluez/etc/dbus-1/system.d/bluetooth.conf
++
++clean::
++	-rm -f $(CURDIR)/debian/bluez-pcmcia-support.udev
+diff -Naur bluez-4.98/debian/source/format bluez-4.98-2ubuntu7-sixaxis.1/debian/source/format
+--- bluez-4.98/debian/source/format	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/source/format	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1 @@
++3.0 (quilt)
+diff -Naur bluez-4.98/debian/source_bluez.py bluez-4.98-2ubuntu7-sixaxis.1/debian/source_bluez.py
+--- bluez-4.98/debian/source_bluez.py	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/source_bluez.py	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,40 @@
++#!/usr/bin/python
++# -*- coding: utf-8 -*-
++'''apport package hook for bluez
++
++(c) 2010 Free Software Foundation
++Author:
++Baptiste Mille-Mathias <baptistem@src.gnome.org>
++
++'''
++from apport.hookutils import *
++import re
++
++def add_info(report, ui):
++    report['syslog'] = recent_syslog(re.compile(r'bluetooth', re.IGNORECASE))
++    attach_hardware(report)
++    if command_available('hciconfig'):
++	report['hciconfig'] = command_output('hciconfig')
++    if command_available('rfkill'):
++	report['rfkill'] = command_output(['rfkill','list'])
++    if command_available('getfacl'):
++	report['getfacl'] = command_output(['getfacl','/dev/rfkill'])
++
++    interesting_modules = ('btusb', 'rfcomm', 'sco', 'bnep', 'l2cap', 'bluetooth')
++    interesting_modules_loaded = []
++
++    for line in open('/proc/modules'):
++        module = line.split()[0]
++        if module in interesting_modules:
++            interesting_modules_loaded.append(module)
++
++    if interesting_modules_loaded:
++        report['InterestingModules'] = ' '.join(interesting_modules_loaded)
++
++    ui.information("""Your bug report will be processed in few seconds.
++If you can reproduce it, please follow the next steps:
++    - Open a new terminal
++    - Run the command "sudo hcidump -XYt > $HOME/hci.log"
++    - Reproduce the actions until the error happens
++    - On the terminal, press Ctrl+C to stop hcidump.
++    - Attach the file hci.log to the bug report.""")
+diff -Naur bluez-4.98/debian/source.lintian-overrides bluez-4.98-2ubuntu7-sixaxis.1/debian/source.lintian-overrides
+--- bluez-4.98/debian/source.lintian-overrides	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/source.lintian-overrides	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,5 @@
++# transitional packages
++bluez source: debhelper-but-no-misc-depends bluez-utils
++bluez source: debhelper-but-no-misc-depends bluez-audio
++# metapackage
++bluez source: debhelper-but-no-misc-depends bluetooth
+diff -Naur bluez-4.98/debian/watch bluez-4.98-2ubuntu7-sixaxis.1/debian/watch
+--- bluez-4.98/debian/watch	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/debian/watch	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,2 @@
++version=3
++http://www.kernel.org/pub/linux/bluetooth/ .*bluez-([.\d]+)\.tar\.gz
+diff -Naur bluez-4.98/input/device.c bluez-4.98-2ubuntu7-sixaxis.1/input/device.c
+--- bluez-4.98/input/device.c	2011-12-21 22:53:54.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/input/device.c	2012-07-20 04:36:27.000000000 +0100
+@@ -596,8 +596,15 @@
+ 	extract_hid_record(rec, req);
+ 	sdp_record_free(rec);
+ 
+-	req->vendor = btd_device_get_vendor(idev->device);
+-	req->product = btd_device_get_product(idev->device);
++	if (idev->name && strcmp(idev->name, "PLAYSTATION(R)3 Controller") == 0) {
++		req->vendor = 0x054C;
++		req->product = 0x0268;
++		info("Fudged SIXAXIS controller vendor/product IDs to 0x%x/0x%x to trigger hid-sony",
++		     req->vendor, req->product);
++	} else {
++		req->vendor = btd_device_get_vendor(idev->device);
++		req->product = btd_device_get_product(idev->device);
++	}
+ 	req->version = btd_device_get_version(idev->device);
+ 
+ 	fake_hid = get_fake_hid(req->vendor, req->product);
+diff -Naur bluez-4.98/lib/bluetooth.h bluez-4.98-2ubuntu7-sixaxis.1/lib/bluetooth.h
+--- bluez-4.98/lib/bluetooth.h	2011-12-21 22:53:54.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/lib/bluetooth.h	2012-07-20 04:36:03.000000000 +0100
+@@ -111,17 +111,19 @@
+ /* Bluetooth unaligned access */
+ #define bt_get_unaligned(ptr)			\
+ ({						\
+-	struct __attribute__((packed)) {	\
++	struct __s {				\
+ 		typeof(*(ptr)) __v;		\
+-	} *__p = (void *) (ptr);		\
++	} __attribute__((packed)) ;		\
++	struct __s *__p = (struct __s *) (ptr);	\
+ 	__p->__v;				\
+ })
+ 
+ #define bt_put_unaligned(val, ptr)		\
+ do {						\
+-	struct __attribute__((packed)) {	\
++	struct __s {				\
+ 		typeof(*(ptr)) __v;		\
+-	} *__p = (void *) (ptr);		\
++	}__attribute__((packed)) ;		\
++	struct __s *__p = (struct __s *) (ptr);	\
+ 	__p->__v = (val);			\
+ } while(0)
+ 
+diff -Naur bluez-4.98/Makefile.am bluez-4.98-2ubuntu7-sixaxis.1/Makefile.am
+--- bluez-4.98/Makefile.am	2012-01-11 22:44:59.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/Makefile.am	2012-07-20 04:36:03.000000000 +0100
+@@ -1,5 +1,6 @@
+ 
+ AM_MAKEFLAGS = --no-print-directory
++ACLOCAL_AMFLAGS = -I m4
+ 
+ lib_LTLIBRARIES =
+ 
+@@ -244,6 +245,11 @@
+ 			thermometer/thermometer.h thermometer/thermometer.c
+ endif
+ 
++if CABLE
++builtin_modules += cable
++builtin_sources += plugins/cable.c
++endif
++
+ builtin_modules += hciops mgmtops
+ builtin_sources += plugins/hciops.c plugins/mgmtops.c
+ 
+@@ -311,7 +317,7 @@
+ 			src/event.h src/event.c \
+ 			src/oob.h src/oob.c src/eir.h src/eir.c
+ src_bluetoothd_LDADD = lib/libbluetooth-private.la @GLIB_LIBS@ @DBUS_LIBS@ \
+-							@CAPNG_LIBS@ -ldl -lrt
++							@CAPNG_LIBS@ @CABLE_LIBS@ -ldl -lrt
+ src_bluetoothd_LDFLAGS = -Wl,--export-dynamic \
+ 				-Wl,--version-script=$(srcdir)/src/bluetooth.ver
+ 
+@@ -342,7 +348,7 @@
+ 			proximity/proximity.conf
+ 
+ if ALSA
+-alsadir = $(libdir)/alsa-lib
++alsadir = $(ALSA_LIBDIR)/alsa-lib
+ 
+ alsa_LTLIBRARIES = audio/libasound_module_pcm_bluetooth.la \
+ 				audio/libasound_module_ctl_bluetooth.la
+@@ -432,7 +438,7 @@
+ 
+ AM_YFLAGS = -d
+ 
+-AM_CFLAGS = @DBUS_CFLAGS@ @GLIB_CFLAGS@ @CAPNG_CFLAGS@
++AM_CFLAGS = @DBUS_CFLAGS@ @GLIB_CFLAGS@ @CAPNG_CFLAGS@ @CABLE_CFLAGS@
+ 
+ INCLUDES = -I$(builddir)/lib -I$(builddir)/src -I$(srcdir)/src \
+ 			-I$(srcdir)/audio -I$(srcdir)/sbc -I$(srcdir)/gdbus \
+diff -Naur bluez-4.98/plugins/cable.c bluez-4.98-2ubuntu7-sixaxis.1/plugins/cable.c
+--- bluez-4.98/plugins/cable.c	1970-01-01 01:00:00.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/plugins/cable.c	2012-07-20 04:36:03.000000000 +0100
+@@ -0,0 +1,382 @@
++/*
++ *
++ *  BlueZ - Bluetooth protocol stack for Linux
++ *
++ *  Copyright (C) 2009  Bastien Nocera <hadess@hadess.net>
++ *
++ *
++ *  This program is free software; you can redistribute it and/or modify
++ *  it under the terms of the GNU General Public License as published by
++ *  the Free Software Foundation; either version 2 of the License, or
++ *  (at your option) any later version.
++ *
++ *  This program is distributed in the hope that it will be useful,
++ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
++ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ *  GNU General Public License for more details.
++ *
++ *  You should have received a copy of the GNU General Public License
++ *  along with this program; if not, write to the Free Software
++ *  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
++ *
++ */
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif
++
++#include <glib.h>
++#define LIBUDEV_I_KNOW_THE_API_IS_SUBJECT_TO_CHANGE 1
++#include <libudev.h>
++#include <dbus/dbus.h>
++#include <bluetooth/bluetooth.h>
++#include <bluetooth/sdp.h>
++#include <libusb-1.0/libusb.h>
++
++#include "plugin.h"
++#include "log.h"
++
++#include "adapter.h"
++#include "manager.h"
++#include "device.h"
++
++#include "storage.h"
++#include "sdp_lib.h"
++
++/* Vendor and product ID for the Sixaxis PS3 controller */
++#define VENDOR 0x054c
++#define PRODUCT 0x0268
++#define SIXAXIS_PNP_RECORD "3601920900000A000100000900013503191124090004350D35061901000900113503190011090006350909656E09006A0901000900093508350619112409010009000D350F350D350619010009001335031900110901002513576972656C65737320436F6E74726F6C6C65720901012513576972656C65737320436F6E74726F6C6C6572090102251B536F6E7920436F6D707574657220456E7465727461696E6D656E740902000901000902010901000902020800090203082109020428010902052801090206359A35980822259405010904A101A102850175089501150026FF00810375019513150025013500450105091901291381027501950D0600FF8103150026FF0005010901A10075089504350046FF0009300931093209358102C0050175089527090181027508953009019102750895300901B102C0A1028502750895300901B102C0A10285EE750895300901B102C0A10285EF750895300901B102C0C0090207350835060904090901000902082800090209280109020A280109020B09010009020C093E8009020D280009020E2800"
++#define HID_UUID "00001124-0000-1000-8000-00805f9b34fb"
++
++static struct btd_device *create_cable_association(DBusConnection *conn,
++						    struct btd_adapter *adapter,
++						    const char *name,
++						    const char *address,
++						    guint32 vendor_id,
++						    guint32 product_id,
++						    const char *pnp_record)
++{
++	sdp_record_t *rec;
++	struct btd_device *device;
++	bdaddr_t src, dst;
++	char srcaddr[18];
++
++	device = adapter_find_device(adapter, address);
++	if (device == NULL) {
++		device = device_create(conn, adapter, address, ADDR_TYPE_BREDR);
++		if (device != NULL)
++			adapter_create_device_for_device(conn, adapter, device);
++	}
++	if (device != NULL) {
++		device_set_temporary(device, FALSE);
++		device_set_name(device, name);
++	}
++
++	str2ba(address, &dst);
++	adapter_get_address(adapter, &src);
++	ba2str(&src, srcaddr);
++
++	write_device_name(&dst, &src, (char *) name);
++
++	/* Store the device's SDP record */
++	rec = record_from_string(pnp_record);
++	store_record(srcaddr, address, rec);
++	sdp_record_free(rec);
++	/* Set the device id */
++	store_device_id(srcaddr, address, 0xffff, vendor_id, product_id, 0);
++	/* Don't write a profile, it will be updated when the device connects */
++
++	write_trust(srcaddr, address, "[all]", TRUE);
++
++	return device;
++}
++
++static char *get_bdaddr(libusb_device_handle *devh, int itfnum)
++{
++	unsigned char msg[17];
++	char *address;
++	int res;
++
++	res = libusb_control_transfer(devh,
++				      LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_CLASS | LIBUSB_RECIPIENT_INTERFACE,
++				      0x01, 0x03f2, itfnum,
++				      (void*) msg, sizeof(msg),
++				      5000);
++
++	if (res < 0) {
++		DBG("Getting the device Bluetooth address failed");
++		return NULL;
++	}
++
++	address = g_strdup_printf("%02X:%02X:%02X:%02X:%02X:%02X",
++				  msg[4], msg[5], msg[6], msg[7], msg[8], msg[9]);
++
++	DBG("Device Bluetooth address: %s\n", address);
++
++	return address;
++}
++
++static gboolean set_master_bdaddr(libusb_device_handle *devh, int itfnum, char *host)
++{
++	unsigned char msg[8];
++	int mac[6];
++	int res;
++
++	if (sscanf(host, "%X:%X:%X:%X:%X:%X",
++		   &mac[0],&mac[1],&mac[2],&mac[3],&mac[4],&mac[5]) != 6) {
++		return FALSE;
++	}
++
++	msg[0] = 0x01;
++	msg[1] = 0x00;
++	msg[2] = mac[0];
++	msg[3] = mac[1];
++	msg[4] = mac[2];
++	msg[5] = mac[3];
++	msg[6] = mac[4];
++	msg[7] = mac[5];
++
++	res = libusb_control_transfer(devh,
++				      LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_CLASS | LIBUSB_RECIPIENT_INTERFACE,
++				      0x09, 0x03f5, itfnum,
++				      (void*) msg, sizeof(msg),
++				      5000);
++
++	if (res < 0) {
++		DBG("Setting the master Bluetooth address failed");
++		return FALSE;
++	}
++
++	return TRUE;
++}
++static void handle_usb_device(struct btd_adapter *adapter,
++			      libusb_device *dev,
++			      struct libusb_config_descriptor *cfg,
++			      int itfnum,
++			      const struct libusb_interface_descriptor *alt)
++{
++	DBusConnection *conn;
++	libusb_device_handle *devh;
++	char *device_bdaddr;
++	char adapter_bdaddr[18];
++	struct btd_device *device;
++	bdaddr_t dst;
++
++	device_bdaddr = NULL;
++	conn = dbus_bus_get(DBUS_BUS_SYSTEM, NULL);
++	if (conn == NULL) {
++		DBG("Failed to get on the bus");
++		return;
++	}
++
++	if (libusb_open(dev, &devh) < 0) {
++		DBG("Can't open device");
++		goto bail;
++	}
++	libusb_detach_kernel_driver(devh, itfnum);
++
++	if (libusb_claim_interface(devh, itfnum) < 0) {
++		DBG("Can't claim interface %d", itfnum);
++		goto bail;
++	}
++
++	device_bdaddr = get_bdaddr(devh, itfnum);
++	if (device_bdaddr == NULL) {
++		DBG("Failed to get the Bluetooth address from the device");
++		goto bail;
++	}
++
++	device = create_cable_association(conn,
++					  adapter,
++					  "PLAYSTATION(R)3 Controller",
++					  device_bdaddr,
++					  VENDOR, PRODUCT, SIXAXIS_PNP_RECORD);
++	btd_device_add_uuid(device, HID_UUID);
++
++	adapter_get_address(adapter, &dst);
++	ba2str(&dst, adapter_bdaddr);
++	DBG("Adapter bdaddr %s", adapter_bdaddr);
++
++	if (set_master_bdaddr(devh, itfnum, adapter_bdaddr) == FALSE) {
++		DBG("Failed to set the master Bluetooth address");
++		goto bail;
++	}
++
++bail:
++	dbus_connection_unref(conn);
++	g_free(device_bdaddr);
++	libusb_release_interface(devh, itfnum);
++	/* We ignore errors from the reattach, as there's nothing we
++	 * can do about it */
++	libusb_attach_kernel_driver(devh, itfnum);
++	if (devh != NULL)
++		libusb_close(devh);
++}
++
++static void handle_device_plug(struct udev_device *udevice)
++{
++	struct btd_adapter *adapter;
++	guint i;
++
++	libusb_device **list, *usbdev;
++	ssize_t num_devices;
++	struct libusb_device_descriptor desc;
++	guint8 j;
++
++	if (g_strcmp0(udev_device_get_property_value(udevice, "ID_SERIAL"),
++		      "Sony_PLAYSTATION_R_3_Controller") != 0)
++		return;
++	/* Don't look at events with an associated driver */
++	if (udev_device_get_property_value(udevice, "ID_USB_DRIVER") != NULL)
++		return;
++
++	DBG("Found Sixaxis device");
++
++	/* Look for the default adapter */
++	adapter = manager_get_default_adapter();
++	if (adapter == NULL)
++		return;
++
++	/* Look for the USB device */
++	libusb_init(NULL);
++
++	num_devices = libusb_get_device_list(NULL, &list);
++	if (num_devices < 0) {
++		DBG("libusb_get_device_list failed");
++		return;
++	}
++
++	usbdev = NULL;
++	for (i = 0; i < num_devices; i++) {
++		char *path;
++
++		path = g_strdup_printf("%s/%03d/%03d", "/dev/bus/usb",
++				       libusb_get_bus_number(list[i]),
++				       libusb_get_device_address(list[i]));
++		if (g_strcmp0(path, udev_device_get_devnode(udevice)) == 0) {
++			g_free(path);
++			usbdev = libusb_ref_device(list[i]);
++			break;
++		}
++		g_free(path);
++	}
++
++	libusb_free_device_list(list, TRUE);
++	if (usbdev == NULL) {
++		DBG("Found a Sixaxis, but couldn't find it via libusb");
++		goto out;
++	}
++
++	if (libusb_get_device_descriptor(usbdev, &desc) < 0) {
++		DBG("libusb_get_device_descriptor() failed");
++		goto out;
++	}
++
++	/* Look for the interface number that interests us */
++	for (j = 0; j < desc.bNumConfigurations; j++) {
++		struct libusb_config_descriptor *config;
++		guint8 k;
++
++		if (libusb_get_config_descriptor(usbdev, j, &config) < 0) {
++			DBG("Failed to get config descriptor %d", j);
++			continue;
++		}
++
++		for (k = 0; k < config->bNumInterfaces; k++) {
++			const struct libusb_interface *itf = &config->interface[k];
++			int l;
++
++			for (l = 0; l < itf->num_altsetting ; l++) {
++				struct libusb_interface_descriptor alt;
++
++				alt = itf->altsetting[l];
++				if (alt.bInterfaceClass == 3) {
++					handle_usb_device(adapter, usbdev, config, l, &alt);
++				}
++			}
++		}
++	}
++
++out:
++	if (usbdev != NULL)
++		libusb_unref_device(usbdev);
++	libusb_exit(NULL);
++}
++
++static gboolean device_event_idle(struct udev_device *udevice)
++{
++	handle_device_plug(udevice);
++	udev_device_unref(udevice);
++	return FALSE;
++}
++
++static struct udev *ctx = NULL;
++static struct udev_monitor *monitor = NULL;
++static guint watch_id = 0;
++
++static gboolean
++monitor_event(GIOChannel *source,
++	      GIOCondition condition,
++	      gpointer data)
++{
++	struct udev_device *udevice;
++
++	udevice = udev_monitor_receive_device(monitor);
++	if (udevice == NULL)
++		goto out;
++	if (g_strcmp0(udev_device_get_action(udevice), "add") != 0)
++		goto out;
++
++	g_timeout_add_seconds(1, (GSourceFunc) device_event_idle, udevice);
++
++out:
++	return TRUE;
++}
++
++
++static int cable_init(void)
++{
++	GIOChannel *channel;
++
++	DBG("Setup cable plugin");
++
++	ctx = udev_new();
++	monitor = udev_monitor_new_from_netlink(ctx, "udev");
++	if (monitor == NULL) {
++		error ("Could not get udev monitor");
++		return -1;
++	}
++
++	/* Listen for newly connected usb device */
++	udev_monitor_filter_add_match_subsystem_devtype(monitor,
++							"usb", NULL);
++	udev_monitor_enable_receiving(monitor);
++
++	channel = g_io_channel_unix_new(udev_monitor_get_fd(monitor));
++	watch_id = g_io_add_watch(channel, G_IO_IN, monitor_event, NULL);
++	g_io_channel_unref(channel);
++
++	return 0;
++}
++
++static void cable_exit(void)
++{
++	DBG("Cleanup cable plugin");
++
++	if (watch_id != 0) {
++		g_source_remove(watch_id);
++		watch_id = 0;
++	}
++	if (monitor != NULL) {
++		udev_monitor_unref(monitor);
++		monitor = NULL;
++	}
++	if (ctx != NULL) {
++		udev_unref(ctx);
++		ctx = NULL;
++	}
++}
++
++BLUETOOTH_PLUGIN_DEFINE(cable, VERSION,
++			BLUETOOTH_PLUGIN_PRIORITY_DEFAULT, cable_init, cable_exit)
+diff -Naur bluez-4.98/sap/sap-dummy.c bluez-4.98-2ubuntu7-sixaxis.1/sap/sap-dummy.c
+--- bluez-4.98/sap/sap-dummy.c	2011-12-21 22:53:54.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/sap/sap-dummy.c	2012-07-20 04:36:03.000000000 +0100
+@@ -340,6 +340,7 @@
+ 
+ void sap_exit(void)
+ {
++	g_dbus_unregister_interface(connection, SAP_DUMMY_PATH, SAP_DUMMY_IFACE);
+ 	dbus_connection_unref(connection);
+ 	connection = NULL;
+ }
+diff -Naur bluez-4.98/src/adapter.c bluez-4.98-2ubuntu7-sixaxis.1/src/adapter.c
+--- bluez-4.98/src/adapter.c	2012-01-11 22:44:59.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/src/adapter.c	2012-07-20 04:36:03.000000000 +0100
+@@ -1014,6 +1014,25 @@
+ 	return device;
+ }
+ 
++void adapter_create_device_for_device(DBusConnection *conn,
++				      struct btd_adapter *adapter,
++				      struct btd_device *device)
++{
++	const char *path;
++
++	device_set_temporary(device, TRUE);
++
++	adapter->devices = g_slist_append(adapter->devices, device);
++
++	path = device_get_path(device);
++	g_dbus_emit_signal(conn, adapter->path,
++			ADAPTER_INTERFACE, "DeviceCreated",
++			DBUS_TYPE_OBJECT_PATH, &path,
++			DBUS_TYPE_INVALID);
++
++	adapter_update_devices(adapter);
++}
++
+ void adapter_remove_device(DBusConnection *conn, struct btd_adapter *adapter,
+ 						struct btd_device *device,
+ 						gboolean remove_storage)
+diff -Naur bluez-4.98/src/adapter.h bluez-4.98-2ubuntu7-sixaxis.1/src/adapter.h
+--- bluez-4.98/src/adapter.h	2012-01-11 22:44:59.000000000 +0000
++++ bluez-4.98-2ubuntu7-sixaxis.1/src/adapter.h	2012-07-20 04:36:03.000000000 +0100
+@@ -108,6 +108,9 @@
+ 					uint8_t *data, uint8_t data_len);
+ void adapter_emit_device_found(struct btd_adapter *adapter,
+ 						struct remote_dev_info *dev);
++void adapter_create_device_for_device(DBusConnection *conn,
++				      struct btd_adapter *adapter,
++				      struct btd_device *device);
+ void adapter_mode_changed(struct btd_adapter *adapter, uint8_t scan_mode);
+ int adapter_set_name(struct btd_adapter *adapter, const char *name);
+ void adapter_name_changed(struct btd_adapter *adapter, const char *name);
+diff -Naur bluez-4.98/tools/hid2hci.c bluez-4.98-2ubuntu7-sixaxis.1/tools/hid2hci.c
+--- bluez-4.98/tools/hid2hci.c	2011-05-03 09:20:36.000000000 +0100
++++ bluez-4.98-2ubuntu7-sixaxis.1/tools/hid2hci.c	2012-07-20 04:36:03.000000000 +0100
+@@ -240,7 +240,7 @@
+ 	enum mode mode = HCI;
+ 	const char *devpath = NULL;
+ 	int err = -1;
+-	int rc = 1;
++	int rc = 0;
+ 
+ 	for (;;) {
+ 		int option;
+@@ -288,13 +288,16 @@
+ 	}
+ 
+ 	udev = udev_new();
+-	if (udev == NULL)
++	if (udev == NULL) {
++		rc = errno;
+ 		goto exit;
++	}
+ 
+ 	snprintf(syspath, sizeof(syspath), "%s/%s", udev_get_sys_path(udev), devpath);
+ 	udev_dev = udev_device_new_from_syspath(udev, syspath);
+ 	if (udev_dev == NULL) {
+ 		fprintf(stderr, "error: could not find '%s'\n", devpath);
++		rc = errno;
+ 		goto exit;
+ 	}
+ 
+@@ -312,6 +315,7 @@
+ 			dev = udev_device_get_parent_with_subsystem_devtype(dev, "usb", "usb_device");
+ 			if (dev == NULL) {
+ 				fprintf(stderr, "error: could not find usb_device for '%s'\n", devpath);
++				rc = errno;
+ 				goto exit;
+ 			}
+ 		}
+@@ -320,6 +324,7 @@
+ 		if (handle == NULL) {
+ 			fprintf(stderr, "error: unable to handle '%s'\n",
+ 				udev_device_get_syspath(dev));
++			rc = errno;
+ 			goto exit;
+ 		}
+ 		err = usb_switch(handle, mode);
+@@ -331,6 +336,7 @@
+ 		device = udev_device_get_devnode(udev_dev);
+ 		if (device == NULL) {
+ 			fprintf(stderr, "error: could not find hiddev device node\n");
++			rc = errno;
+ 			goto exit;
+ 		}
+ 		err = hid_switch_logitech(device);
