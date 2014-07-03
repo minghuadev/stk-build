@@ -440,3 +440,17 @@ manual setup in travis yml file:
         #repo - only trigger a build for the given repository, to play nice with forks
 
 
+
+git passing ssh options
+=========================
+
+http://stackoverflow.com/questions/7772190/passing-ssh-options-to-git-clone
+
+Here is tricky example how to pass the ssh arguments by using GIT_SSH variable:
+
+  echo 'ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no $*' > ssh
+  chmod +x ssh
+  GIT_TRACE=1 GIT_SSH='./ssh' git clone user@host
+
+
+
