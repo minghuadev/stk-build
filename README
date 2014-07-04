@@ -453,4 +453,11 @@ Here is tricky example how to pass the ssh arguments by using GIT_SSH variable:
   GIT_TRACE=1 GIT_SSH='./ssh' git clone user@host
 
 
+http://stackoverflow.com/questions/10765946/ssh-use-known-hosts-other-than-home-ssh-known-hosts
+
+You may specify an alternative known_hosts file in $HOME/.ssh/config or /etc/ssh/ssh_config, 
+the parameter UserKnownHostsFile.
+
+Or, specify that on the ssh command line, i.e. ssh -o UserKnownHostsFile=somewhere
+
 
