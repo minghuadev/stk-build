@@ -85,10 +85,12 @@ in chroot install xterm and verify it runs well.
 
 [5] dependency packages in chroot
 
-    yum install gcc-c++ autoconf automake libogg-devel libvorbis-devel i
+    yum install gcc-c++ autoconf automake libogg-devel libvorbis-devel 
     yum install openal-soft-devel fribidi-devel subversion libcurl-devel 
-    yum install cmake irrlicht-devel libbluedevil-devel.x86_64
-    yum install git tar make
+    yum install cmake irrlicht-devel libbluedevil-devel 
+    yum install git tar make 
+
+maybe libbluedevil-devel.x86_64
 
 
 [6] source code
